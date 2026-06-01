@@ -1,0 +1,7 @@
+node_modules/
+backend/.env
+backend/tickets.db
+backend/uploads/
+frontend/dist/
+.DS_Store
+*.log
