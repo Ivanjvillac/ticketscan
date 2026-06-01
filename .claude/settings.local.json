@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(npm install *)",
-      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\ivanj\\\\ticketscan\\\\frontend\\\\public\")"
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\ivanj\\\\ticketscan\\\\frontend\\\\public\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --title 'TicketScan v3 — full feature build + Vercel/Render deployment' --body ' *)",
+      "Bash(git commit -m 'chore: update local Claude settings *)"
     ]
   }
 }
