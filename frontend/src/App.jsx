@@ -9,8 +9,10 @@ import PriceAlerts from "./PriceAlerts";
 import Trash from "./Trash";
 import * as XLSX from "xlsx";
 
-const API = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api" : "http://localhost:3001/api");
-const UPLOADS = import.meta.env.VITE_UPLOADS_URL || (import.meta.env.PROD ? "" : "http://localhost:3001/uploads");
+// Para acceso móvil en red local: cambia localhost por tu IP local (ej: 192.168.1.50)
+const LOCAL_IP = "localhost"; // ← PON AQUÍ TU IP LOCAL PARA MÓVIL
+const API = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api" : `http://${LOCAL_IP}:3001/api`);
+const UPLOADS = import.meta.env.VITE_UPLOADS_URL || (import.meta.env.PROD ? "" : `http://${LOCAL_IP}:3001/uploads`);
 
 // ── Tema claro ─────────────────────────────────────────────────────────────────
 const LIGHT_CSS = `

@@ -5,7 +5,10 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const app = express();
-app.use(cors({ origin: "*" }));
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "*",
+  credentials: true
+}));
 app.use(express.json({ limit: "20mb" }));
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
