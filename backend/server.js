@@ -561,10 +561,8 @@ app.post("/api/restore", async (req, res) => {
   res.json({ ok:true, imported:count });
 });
 
-// Para local: escuchar en puerto 3001
-if (process.env.NODE_ENV !== "production") {
-  app.listen(3001, () => console.log("✅ Backend en http://localhost:3001"));
-}
+// Escuchar siempre (Render y local)
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`✅ Backend en http://localhost:${PORT}`));
 
-// Para Vercel: exportar como handler
 export default app;
