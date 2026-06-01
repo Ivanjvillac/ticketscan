@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const app = express();
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "*",
+  origin: (origin, cb) => cb(null, true),  // acepta cualquier origen
   credentials: true
 }));
 app.use(express.json({ limit: "20mb" }));
