@@ -399,7 +399,7 @@ function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX
 }
 
 // ── Scan Panel ────────────────────────────────────────────────────────────────
-function ScanPanel({ onSaved, historial = [] }) {
+function ScanPanel({ onSaved, historial = [], currentUser }) {
   const [queue, setQueue] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [singleImage, setSingleImage] = useState(null);
@@ -497,7 +497,7 @@ function ScanPanel({ onSaved, historial = [] }) {
     });
     const resp = await fetch(`${API}/analizar`, {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ imagen_base64: b64, media_type: file.type||"image/jpeg", force })
+      body: JSON.stringify({ imagen_base64: b64, media_type: file.type||"image/jpeg", force, subido_por: currentUser || null })
     });
     if (resp.status === 409) {
       const err = await resp.json();
@@ -876,6 +876,11 @@ function TicketDetail({ ticket, onBack, onRefresh }) {
       <span style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"#4A5568"}}>
         #{ticket.id} · {data.fecha_escaneo?.slice(0,16).replace("T"," ")}
       </span>
+      {data.subido_por && (
+        <span style={{fontFamily:"'Space Mono',monospace",fontSize:10,background:"rgba(0,229,160,.08)",color:"#00E5A0",border:"1px solid rgba(0,229,160,.2)",borderRadius:20,padding:"2px 9px"}}>
+          👤 {data.subido_por}
+        </span>
+      )}
       <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
         <button className="btn btn-ghost" style={{padding:"7px 12px",fontSize:12}} onClick={share}>🔗 Compartir</button>
         <button className="btn btn-ghost" style={{padding:"7px 12px",fontSize:12,color:deducible?"#00E5A0":"#6B7280",borderColor:deducible?"rgba(0,229,160,.3)":"#1E2A3A"}} onClick={toggleDeducible}>
@@ -1104,6 +1109,10 @@ export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("ts_token")||"noauth");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("ts_user")||null);
+  const [multiUser, setMultiUser] = useState(false);
+  const [usersList, setUsersList] = useState([]);
+  const [loginUser, setLoginUser] = useState("");
   const [theme, setTheme] = useState(() => localStorage.getItem("ts_theme")||"dark");
   const [showShortcuts, setShowShortcuts] = useState(false);
   const searchRef = useRef();
@@ -1168,6 +1177,12 @@ export default function App() {
 
   useEffect(() => {
     fetch(`${API}/check`).then(r=>r.json()).then(d => {
+      if (d.multiUser) {
+        setMultiUser(true);
+        const names = d.users || [];
+        setUsersList(names);
+        if (names.length && !loginUser) setLoginUser(names[0]);
+      }
       if (d.needsAuth && !token) setNeedsAuth(true);
       else { setNeedsAuth(false); loadHistorial(); loadTags(); }
     }).catch(()=>{ loadHistorial(); loadTags(); });
@@ -1188,11 +1203,19 @@ export default function App() {
   }, [loadHistorial, loadTags]);
 
   const login = async () => {
-    const r = await fetch(`${API}/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({password}) });
+    const body = multiUser ? { password, nombre: loginUser } : { password };
+    const r = await fetch(`${API}/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
     const data = await r.json();
     if (!r.ok) { setAuthError(data.error); return; }
     setToken(data.token); localStorage.setItem("ts_token", data.token);
+    if (data.user) { setCurrentUser(data.user); localStorage.setItem("ts_user", data.user); }
     setNeedsAuth(false); loadHistorial(); loadTags();
+  };
+
+  const logout = () => {
+    setToken("noauth"); setCurrentUser(null);
+    localStorage.removeItem("ts_token"); localStorage.removeItem("ts_user");
+    setNeedsAuth(true);
   };
 
   const deleteTicket = async (e, id) => {
@@ -1236,7 +1259,15 @@ export default function App() {
       <div style={{background:"#111827",border:"1px solid #1E2A3A",borderRadius:16,padding:32,width:320,textAlign:"center"}}>
         <div style={{fontSize:36,marginBottom:12}}>🔐</div>
         <div style={{fontSize:18,fontWeight:800,marginBottom:4}}>Ticket<span style={{color:"#00E5A0"}}>Scan</span></div>
-        <div style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"#4A5568",marginBottom:20}}>Introduce la contraseña</div>
+        <div style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"#4A5568",marginBottom:20}}>
+          {multiUser ? "Selecciona tu usuario" : "Introduce la contraseña"}
+        </div>
+        {multiUser && usersList.length > 0 && (
+          <select value={loginUser} onChange={e=>setLoginUser(e.target.value)}
+            style={{width:"100%",background:"#0D1220",border:"1px solid #1E2A3A",borderRadius:8,padding:"12px 14px",color:"#E8EDF5",fontSize:14,outline:"none",marginBottom:10,fontFamily:"'Syne',sans-serif",cursor:"pointer"}}>
+            {usersList.map(u=><option key={u} value={u}>{u}</option>)}
+          </select>
+        )}
         <input type="password" style={{width:"100%",background:"#0D1220",border:"1px solid #1E2A3A",borderRadius:8,padding:"12px 14px",color:"#E8EDF5",fontSize:14,outline:"none",marginBottom:10}}
           placeholder="Contraseña…" value={password} onChange={e=>setPassword(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} autoFocus/>
         {authError && <div style={{color:"#F87171",fontFamily:"'Space Mono',monospace",fontSize:11,marginBottom:10}}>{authError}</div>}
@@ -1333,17 +1364,34 @@ export default function App() {
               </div>
               {t.matching?.length>0 && <div className="hist-match">🛒 {t.matching.map(m=>m.nombre).slice(0,3).join(", ")}</div>}
               {t.tags?.length>0 && <div className="hist-tags">{t.tags.map(tag=><span key={tag} className="hist-tag">{tag}</span>)}</div>}
+              {t.subido_por && <div style={{fontFamily:"'Space Mono',monospace",fontSize:8,color:"#6B7280",marginTop:3}}>👤 {t.subido_por}</div>}
             </div>
           ))}
         </div>
 
-        <div style={{padding:"8px 14px",borderTop:"1px solid #1E2A3A",flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <button onClick={toggleTheme} style={{background:"none",border:"none",color:"#4A5568",cursor:"pointer",fontSize:14,padding:"4px"}} title="Cambiar tema">
-            {theme==="light"?"🌙":"☀️"}
-          </button>
-          <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",color:"#4A5568",cursor:"pointer",fontFamily:"'Space Mono',monospace",fontSize:10,padding:"4px"}} title="Atajos de teclado">
-            ⌨️ ?
-          </button>
+        <div style={{padding:"8px 14px",borderTop:"1px solid #1E2A3A",flexShrink:0}}>
+          {currentUser && (
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#4A5568"}}>
+                👤 <span style={{color:"#00E5A0"}}>{currentUser}</span>
+              </span>
+              <button onClick={logout}
+                style={{background:"none",border:"1px solid #1E2A3A",color:"#4A5568",cursor:"pointer",fontFamily:"'Space Mono',monospace",fontSize:9,padding:"2px 7px",borderRadius:4,transition:"all .15s"}}
+                title="Cerrar sesión"
+                onMouseEnter={e=>{e.currentTarget.style.color="#F87171";e.currentTarget.style.borderColor="rgba(239,68,68,.3)";}}
+                onMouseLeave={e=>{e.currentTarget.style.color="#4A5568";e.currentTarget.style.borderColor="#1E2A3A";}}>
+                ↪ salir
+              </button>
+            </div>
+          )}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <button onClick={toggleTheme} style={{background:"none",border:"none",color:"#4A5568",cursor:"pointer",fontSize:14,padding:"4px"}} title="Cambiar tema">
+              {theme==="light"?"🌙":"☀️"}
+            </button>
+            <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",color:"#4A5568",cursor:"pointer",fontFamily:"'Space Mono',monospace",fontSize:10,padding:"4px"}} title="Atajos de teclado">
+              ⌨️ ?
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -1359,7 +1407,7 @@ export default function App() {
 
           {view==="detail"&&selected
             ? <TicketDetail ticket={selected} onBack={()=>{setView("dash");setSelected(null);}} onRefresh={()=>{loadHistorial();loadTags();}}/>
-            : view==="scan" ? <ScanPanel onSaved={loadHistorial} historial={historial}/>
+            : view==="scan" ? <ScanPanel onSaved={loadHistorial} historial={historial} currentUser={currentUser}/>
             : view==="analytics" ? <Analytics historial={historial}/>
             : view==="advanced" ? <AdvancedAnalysis historial={historial}/>
             : view==="lista" ? <ShoppingList/>

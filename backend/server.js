@@ -63,26 +63,53 @@ async function reloadCustomCats() {
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-const SESSIONS = new Set();
+// Multi-user mode: AUTH_USERS="Ivan:pass1,Maria:pass2"
+function parseUsers() {
+  const raw = process.env.AUTH_USERS || "";
+  if (!raw) return null;
+  return raw.split(",").map(u => {
+    const idx = u.indexOf(":");
+    if (idx < 1) return null;
+    return { nombre: u.slice(0, idx).trim(), password: u.slice(idx+1).trim() };
+  }).filter(Boolean);
+}
+const MULTI_USERS = parseUsers();
+const SESSIONS = new Map(); // token → { nombre }
+
 function auth(req, res, next) {
-  if (!process.env.AUTH_PASSWORD) return next();
+  const hasAuth = process.env.AUTH_PASSWORD || MULTI_USERS?.length;
+  if (!hasAuth) return next();
   const pub = ["/api/login","/api/check","/api/s/"];
   if (pub.some(p=>req.path.startsWith(p))) return next();
   const token = req.headers.authorization?.replace("Bearer ","");
   if (!token||!SESSIONS.has(token)) return res.status(401).json({ error:"No autorizado" });
+  req.user = SESSIONS.get(token); // { nombre }
   next();
 }
 app.use(auth);
 
 app.post("/api/login", (req, res) => {
-  if (!process.env.AUTH_PASSWORD) return res.json({ token:"noauth", user:"local", needsAuth:false });
-  const { password } = req.body;
+  const hasAuth = process.env.AUTH_PASSWORD || MULTI_USERS?.length;
+  if (!hasAuth) return res.json({ token:"noauth", user:null, needsAuth:false });
+  const { password, nombre } = req.body;
+  if (MULTI_USERS?.length) {
+    const user = MULTI_USERS.find(u => u.nombre === nombre && u.password === password);
+    if (!user) return res.status(401).json({ error:"Usuario o contraseña incorrectos" });
+    const token = crypto.randomBytes(32).toString("hex");
+    SESSIONS.set(token, { nombre: user.nombre });
+    return res.json({ token, user: user.nombre, needsAuth: true });
+  }
   if (password !== process.env.AUTH_PASSWORD) return res.status(401).json({ error:"Contraseña incorrecta" });
   const token = crypto.randomBytes(32).toString("hex");
-  SESSIONS.add(token);
-  res.json({ token, user: process.env.AUTH_USER||"Usuario", needsAuth:true });
+  const userName = process.env.AUTH_USER || "Usuario";
+  SESSIONS.set(token, { nombre: userName });
+  res.json({ token, user: userName, needsAuth:true });
 });
-app.get("/api/check", (req, res) => res.json({ needsAuth: !!process.env.AUTH_PASSWORD }));
+app.get("/api/check", (req, res) => res.json({
+  needsAuth: !!(process.env.AUTH_PASSWORD || MULTI_USERS?.length),
+  multiUser: !!(MULTI_USERS?.length),
+  users: MULTI_USERS ? MULTI_USERS.map(u=>u.nombre) : null
+}));
 
 // ── Inicialización ────────────────────────────────────────────────────────────
 await reloadCustomCats();
@@ -107,7 +134,7 @@ async function saveImage(ticketId, base64, mimeType) {
 // ── Analizar ticket ───────────────────────────────────────────────────────────
 app.post("/api/analizar", async (req, res) => {
   try {
-    const { imagen_base64, media_type, force } = req.body;
+    const { imagen_base64, media_type, force, subido_por } = req.body;
     if (!imagen_base64) return res.status(400).json({ error:"Falta imagen_base64" });
     if (!process.env.GROQ_API_KEY) return res.status(500).json({ error:"Falta GROQ_API_KEY" });
 
@@ -170,7 +197,8 @@ Formato: {"tienda":"string o null","fecha":"DD/MM/YYYY o null","hora":"HH:MM o n
       ticket_num:datos.ticket_num||null, metodo_pago:datos.metodo_pago||null,
       subtotal:datos.subtotal||null, descuentos:datos.descuentos||null,
       iva:datos.iva||null, total:datos.total||null, notas:datos.notas||null,
-      datos_json: JSON.stringify(datos)
+      datos_json: JSON.stringify(datos),
+      subido_por: subido_por || req.user?.nombre || null
     }).select("id").single();
     if (ticketErr) throw new Error(ticketErr.message);
 
