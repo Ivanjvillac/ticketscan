@@ -66,6 +66,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
   const [newProd, setNewProd] = useState({ nombre:"", cantidad:"1", precio_unitario:"", precio_total:"" });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [saveOk, setSaveOk] = useState(false);
 
   // Detect duplicates
   const nameCount = {};
@@ -121,8 +122,9 @@ export default function EditModal({ ticket, onClose, onSaved }) {
           });
         }
       }
-      onSaved();
-      onClose();
+      await onSaved();
+      setSaveOk(true);
+      setTimeout(onClose, 1200);
     } catch (e) { setSaveError(e.message); } finally { setSaving(false); }
   };
 
@@ -207,6 +209,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
         </div>
 
         {saveError && <div style={{color:"#F87171",fontFamily:"'Space Mono',monospace",fontSize:11,marginBottom:8,padding:"8px 10px",background:"rgba(239,68,68,.08)",borderRadius:6}}>❌ {saveError}</div>}
+        {saveOk && <div style={{color:"#34D399",fontFamily:"'Space Mono',monospace",fontSize:11,marginBottom:8,padding:"8px 10px",background:"rgba(52,211,153,.08)",borderRadius:6}}>✅ Guardado correctamente</div>}
         <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
           <button className="btn-cancel" onClick={onClose}>Cancelar</button>
           <button className="btn-save" onClick={save} disabled={saving}>
