@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 
-const API = (typeof import.meta !== "undefined" && import.meta.env?.PROD) ? "/api" : "http://localhost:3001/api";
+const LOCAL_IP = "localhost";
+const API = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api" : `http://${LOCAL_IP}:3001/api`);
 const CAT_ICONS = {
   "Frutas":"🍎","Verduras":"🥦","Pescado y Marisco":"🐟","Carnes":"🥩","Charcuteria":"🥓",
   "Lacteos y Huevos":"🥛","Bebidas":"🥤","Pan y Bolleria":"🍞","Pasta Arroz Legumbre":"🍝",
