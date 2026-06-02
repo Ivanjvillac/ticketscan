@@ -1230,6 +1230,7 @@ export default function App() {
     const r = await fetch(`${API}/tickets/${ticket.id}`, { headers:authHeaders() });
     const full = await r.json();
     setSelected(full); setView("detail");
+    document.querySelector(".main")?.scrollTo(0, 0);
   };
 
   const displayedTickets = (searchMode==="producto" && fullTextResults)
@@ -1406,7 +1407,7 @@ export default function App() {
           )}
 
           {view==="detail"&&selected
-            ? <TicketDetail ticket={selected} onBack={()=>{setView("dash");setSelected(null);}} onRefresh={()=>{loadHistorial();loadTags();}}/>
+            ? <TicketDetail key={selected.id} ticket={selected} onBack={()=>{setView("dash");setSelected(null);}} onRefresh={()=>{loadHistorial();loadTags();}}/>
             : view==="scan" ? <ScanPanel onSaved={loadHistorial} historial={historial} currentUser={currentUser}/>
             : view==="analytics" ? <Analytics historial={historial}/>
             : view==="advanced" ? <AdvancedAnalysis historial={historial}/>
