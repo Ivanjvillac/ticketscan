@@ -290,6 +290,25 @@ app.delete("/api/tickets/:id", async (req, res) => {
   res.json({ ok:true });
 });
 
+// ── Fusionar tickets ──────────────────────────────────────────────────────────
+app.post("/api/tickets/:id/merge", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const withId = parseInt(req.body.withId, 10);
+    if (!withId || withId === id) return res.status(400).json({ error:"ID inválido" });
+    await supabase.from("productos").update({ ticket_id: id }).eq("ticket_id", withId);
+    const { data: srcTags } = await supabase.from("tags").select("tag").eq("ticket_id", withId);
+    for (const row of (srcTags||[])) {
+      try { await supabase.from("tags").upsert({ ticket_id: id, tag: row.tag }); } catch {}
+    }
+    await supabase.from("tickets").update({ deleted_at: new Date().toISOString() }).eq("id", withId);
+    const { data: allProds } = await supabase.from("productos").select("precio_total").eq("ticket_id", id);
+    const newTotal = Math.round((allProds||[]).reduce((s,p)=>s+(p.precio_total||0),0)*100)/100;
+    if (newTotal > 0) await supabase.from("tickets").update({ total: newTotal }).eq("id", id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Papelera ──────────────────────────────────────────────────────────────────
 app.get("/api/trash", async (req, res) => {
   const { data } = await supabase.from("tickets").select("*").not("deleted_at","is",null).order("deleted_at",{ascending:false});

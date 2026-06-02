@@ -355,6 +355,18 @@ function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX
         </>
       )}
 
+      {(() => {
+        if (!productos.length || data.total == null) return null;
+        const sum = productos.reduce((s, p) => s + (parseFloat(p.precio_total) || 0), 0);
+        const diff = Math.abs(sum - parseFloat(data.total));
+        if (diff < 0.05 || sum === 0) return null;
+        return (
+          <div style={{background:"rgba(251,191,36,.06)",border:"1px solid rgba(251,191,36,.2)",borderRadius:8,padding:"8px 12px",marginBottom:12,fontFamily:"'Space Mono',monospace",fontSize:10,color:"#FCD34D"}}>
+            ⚠️ Suma productos ({fmt(sum)}) ≠ total ({fmt(data.total)}) · diferencia {fmt(diff)}
+          </div>
+        );
+      })()}
+
       {(data.subtotal!=null||data.iva!=null||data.total!=null) && (
         <>
           <div className="sec-label">Resumen</div>
@@ -759,6 +771,27 @@ function DashboardView({ historial, onOpenTicket }) {
   const lastWeekTotal = lastWeek.reduce((s,t)=>s+(t.total||0),0);
   const weekDiff = lastWeekTotal>0 ? Math.round(((thisWeekTotal-lastWeekTotal)/lastWeekTotal)*1000)/10 : null;
 
+  // Year-over-year + forecast
+  const thisMonthNum = now.getMonth();
+  const thisYear = now.getFullYear();
+  const MONTHS_ES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const inMonth = (y,m) => historial.filter(t=>{ const d=parseTicketDate(t.fecha_compra); return d&&d.getFullYear()===y&&d.getMonth()===m; });
+  const thisMonthTickets = inMonth(thisYear, thisMonthNum);
+  const lastYearMonthTickets = inMonth(thisYear-1, thisMonthNum);
+  const thisMonthSpend = thisMonthTickets.reduce((s,t)=>s+(t.total||0),0);
+  const lastYearMonthSpend = lastYearMonthTickets.reduce((s,t)=>s+(t.total||0),0);
+  const yoyChange = lastYearMonthSpend>0 ? Math.round(((thisMonthSpend-lastYearMonthSpend)/lastYearMonthSpend)*1000)/10 : null;
+  const last3 = [1,2,3].map(off=>{ const d=new Date(thisYear,thisMonthNum-off,1); return inMonth(d.getFullYear(),d.getMonth()).reduce((s,t)=>s+(t.total||0),0); }).filter(v=>v>0);
+  const avgMonthly = last3.length ? last3.reduce((a,b)=>a+b,0)/last3.length : 0;
+  const daysInMonth = new Date(thisYear,thisMonthNum+1,0).getDate();
+  const forecastPace = now.getDate()>0&&thisMonthSpend>0 ? Math.round((thisMonthSpend/now.getDate())*daysInMonth*100)/100 : 0;
+
+  // Family
+  const famMap = {};
+  historial.forEach(t=>{ if(!t.subido_por)return; if(!famMap[t.subido_por])famMap[t.subido_por]={total:0,count:0}; famMap[t.subido_por].total+=t.total||0; famMap[t.subido_por].count++; });
+  const famEntries = Object.entries(famMap).sort((a,b)=>b[1].total-a[1].total);
+  const maxFamTotal = famEntries[0]?.[1].total||1;
+
   return (
     <div style={{animation:"fadeUp .35s ease"}}>
       <div className="sec-label">Esta semana</div>
@@ -772,6 +805,31 @@ function DashboardView({ historial, onOpenTicket }) {
           <div className="dash-sub">{weekDiff==null?"sin datos prev.":weekDiff>0?"más que la semana pasada":"menos que la semana pasada"}</div>
         </div>
       </div>
+      {(yoyChange!==null||forecastPace>0) && (<>
+        <div className="sec-label">{MONTHS_ES[thisMonthNum]} {thisYear}</div>
+        <div className="dash-grid" style={{marginBottom:22}}>
+          <div className="dash-card"><div className="dash-label">Gasto actual</div><div className="dash-val" style={{color:"#00E5A0"}}>{fmt(thisMonthSpend)}</div><div className="dash-sub">{thisMonthTickets.length} ticket{thisMonthTickets.length!==1?"s":""}</div></div>
+          {yoyChange!==null && <div className="dash-card"><div className="dash-label">vs {MONTHS_ES[thisMonthNum]} {thisYear-1}</div><div className="dash-val" style={{color:yoyChange>10?"#F87171":yoyChange<-5?"#34D399":"#E8EDF5"}}>{yoyChange>0?`+${yoyChange}`:yoyChange}%</div><div className="dash-sub">{fmt(lastYearMonthSpend)} el año pasado</div></div>}
+          {forecastPace>0 && <div className="dash-card"><div className="dash-label">Previsión fin de mes</div><div className="dash-val" style={{color:forecastPace>avgMonthly*1.15?"#F87171":forecastPace<avgMonthly*0.85?"#34D399":"#E8EDF5"}}>{fmt(forecastPace)}</div><div className="dash-sub">{avgMonthly>0?`media ${last3.length}m: ${fmt(avgMonthly)}`:"al ritmo actual"}</div></div>}
+        </div>
+      </>)}
+
+      {famEntries.length>1 && (<>
+        <div className="sec-label">Por usuario</div>
+        <div className="totals-block" style={{marginBottom:22}}>
+          {famEntries.map(([user,info])=>(
+            <div key={user} className="store-row">
+              <div style={{flex:1,minWidth:0}}>
+                <div className="store-name">👤 {user}</div>
+                <div className="store-meta">{info.count} ticket{info.count!==1?"s":""}</div>
+                <div className="store-bar-wrap"><div className="store-bar-fill" style={{width:`${(info.total/maxFamTotal)*100}%`,background:"linear-gradient(90deg,#00B8FF,#7C3AED)"}}/></div>
+              </div>
+              <span className="tv" style={{marginLeft:16,flexShrink:0}}>{fmt(info.total)}</span>
+            </div>
+          ))}
+        </div>
+      </>)}
+
       <div className="sec-label">Resumen</div>
       <div className="dash-grid">
         <div className="dash-card"><div className="dash-label">Total gastado</div><div className="dash-val" style={{color:"#00E5A0"}}>{fmt(totalGastado)}</div><div className="dash-sub">{historial.length} tickets</div></div>
@@ -806,11 +864,27 @@ function DashboardView({ historial, onOpenTicket }) {
 }
 
 // ── Ticket Detail ─────────────────────────────────────────────────────────────
-function TicketDetail({ ticket, onBack, onRefresh }) {
+function TicketDetail({ ticket, onBack, onRefresh, navList = [], onNavigate }) {
   const [showEdit, setShowEdit] = useState(false);
   const [data, setData] = useState(ticket);
   const [shareToast, setShareToast] = useState(false);
   const [deducible, setDeducible] = useState(!!ticket.deducible);
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergeId, setMergeId] = useState("");
+  const [merging, setMerging] = useState(false);
+  const touchStartX = useRef(null);
+  const navIdx = navList.findIndex(t => t.id === ticket.id);
+  const prevNav = navIdx > 0 ? navList[navIdx - 1] : null;
+  const nextNav = navIdx >= 0 && navIdx < navList.length - 1 ? navList[navIdx + 1] : null;
+  const onTouchStart = e => { touchStartX.current = e.touches[0].clientX; };
+  const onTouchEnd = e => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(dx) < 60) return;
+    if (dx < 0 && nextNav) onNavigate?.(nextNav);
+    if (dx > 0 && prevNav) onNavigate?.(prevNav);
+  };
 
   const refresh = async () => {
     const r = await fetch(`${API}/tickets/${ticket.id}`);
@@ -870,6 +944,21 @@ function TicketDetail({ ticket, onBack, onRefresh }) {
     refresh();
   };
 
+  const doMerge = async () => {
+    const tid = parseInt(mergeId);
+    if (!tid || tid === ticket.id) return;
+    if (!confirm(`¿Fusionar ticket #${tid} en este? El #${tid} se moverá a la papelera.`)) return;
+    setMerging(true);
+    try {
+      const r = await fetch(`${API}/tickets/${ticket.id}/merge`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ withId: tid })
+      });
+      if (r.ok) { setShowMerge(false); setMergeId(""); refresh(); onRefresh?.(); }
+      else { const e=await r.json(); alert("Error: "+e.error); }
+    } catch(e) { alert(e.message); } finally { setMerging(false); }
+  };
+
   const header = (
     <div style={{marginBottom:20,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
       <button className="btn btn-ghost" onClick={onBack}>← Volver</button>
@@ -886,19 +975,42 @@ function TicketDetail({ ticket, onBack, onRefresh }) {
         <button className="btn btn-ghost" style={{padding:"7px 12px",fontSize:12,color:deducible?"#00E5A0":"#6B7280",borderColor:deducible?"rgba(0,229,160,.3)":"#1E2A3A"}} onClick={toggleDeducible}>
           {deducible?"✓ Deducible":"Deducible"}
         </button>
+        <button className="btn btn-ghost" style={{padding:"7px 12px",fontSize:12}} onClick={()=>setShowMerge(v=>!v)}>🔀 Fusionar</button>
         <button className="btn btn-ghost" style={{padding:"7px 12px",fontSize:12}} onClick={()=>setShowEdit(true)}>✏️ Editar</button>
       </div>
     </div>
   );
 
   return (
-    <>
+    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      {showMerge && (
+        <div style={{background:"rgba(0,184,255,.04)",border:"1px solid rgba(0,184,255,.15)",borderRadius:10,padding:"12px 14px",marginBottom:16,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#00B8FF"}}>🔀 Fusionar con ticket ID:</span>
+          <input type="number" placeholder="ID…" value={mergeId} onChange={e=>setMergeId(e.target.value)}
+            style={{background:"#0D1220",border:"1px solid #1E2A3A",borderRadius:6,padding:"6px 10px",color:"#E8EDF5",fontSize:12,outline:"none",width:90}}
+            onKeyDown={e=>e.key==="Enter"&&doMerge()} autoFocus/>
+          <button className="btn btn-primary" style={{padding:"6px 14px",fontSize:12}} onClick={doMerge} disabled={merging}>{merging?"Fusionando…":"Fusionar"}</button>
+          <button className="btn btn-ghost" style={{padding:"6px 10px",fontSize:12}} onClick={()=>{setShowMerge(false);setMergeId("");}}>Cancelar</button>
+          <span style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#4A5568",width:"100%"}}>Los productos del ticket indicado se mueven aquí y ese ticket va a la papelera.</span>
+        </div>
+      )}
       <TicketContent data={merged} ticketId={ticket.id} header={header}
         onExportJSON={exportJSON} onExportCSV={exportCSV} onExportXLSX={exportXLSX}
         onTagAdd={refresh} onTagRemove={removeTag}/>
+      {navList.length > 1 && (
+        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4,fontFamily:"'Space Mono',monospace",fontSize:9,color:"#2D3748",borderTop:"1px solid rgba(30,42,58,.4)"}}>
+          <span style={{cursor:prevNav?"pointer":"default",color:prevNav?"#4A5568":"#1E2A3A"}} onClick={()=>prevNav&&onNavigate?.(prevNav)}>
+            {prevNav?`← ${(prevNav.tienda||"#"+prevNav.id).slice(0,18)}`:""}
+          </span>
+          <span style={{fontSize:8}}>← desliza →</span>
+          <span style={{cursor:nextNav?"pointer":"default",color:nextNav?"#4A5568":"#1E2A3A",textAlign:"right"}} onClick={()=>nextNav&&onNavigate?.(nextNav)}>
+            {nextNav?`${(nextNav.tienda||"#"+nextNav.id).slice(0,18)} →`:""}
+          </span>
+        </div>
+      )}
       {showEdit && <EditModal ticket={data} onClose={()=>setShowEdit(false)} onSaved={refresh}/>}
       {shareToast && <div className="share-toast">🔗 Enlace copiado — válido 7 días</div>}
-    </>
+    </div>
   );
 }
 
@@ -1113,6 +1225,10 @@ export default function App() {
   const [multiUser, setMultiUser] = useState(false);
   const [usersList, setUsersList] = useState([]);
   const [loginUser, setLoginUser] = useState("");
+  const [tooltip, setTooltip] = useState(null);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkTag, setBulkTag] = useState("");
   const [theme, setTheme] = useState(() => localStorage.getItem("ts_theme")||"dark");
   const [showShortcuts, setShowShortcuts] = useState(false);
   const searchRef = useRef();
@@ -1218,6 +1334,23 @@ export default function App() {
     setNeedsAuth(true);
   };
 
+  const bulkAddTag = async () => {
+    if (!bulkTag.trim() || !selectedIds.size) return;
+    await Promise.all([...selectedIds].map(id =>
+      fetch(`${API}/tickets/${id}/tags`, { method:"POST", headers:authHeaders(), body:JSON.stringify({tag:bulkTag.trim()}) })
+    ));
+    setBulkTag(""); setBulkMode(false); setSelectedIds(new Set()); loadHistorial(); loadTags();
+  };
+
+  const bulkDeleteSelected = async () => {
+    if (!selectedIds.size || !confirm(`¿Mover ${selectedIds.size} ticket${selectedIds.size>1?"s":""} a la papelera?`)) return;
+    await Promise.all([...selectedIds].map(id =>
+      fetch(`${API}/tickets/${id}`, { method:"DELETE", headers:authHeaders() })
+    ));
+    setBulkMode(false); setSelectedIds(new Set()); loadHistorial();
+    if (view === "detail") { setView("dash"); setSelected(null); }
+  };
+
   const deleteTicket = async (e, id) => {
     e.stopPropagation();
     if (!confirm("¿Eliminar este ticket? Se guardará en la papelera 30 días.")) return;
@@ -1309,13 +1442,21 @@ export default function App() {
 
         <div className="sidebar-title">
           Historial <span className="ticket-count">{historial.length}</span>
+          <button onClick={()=>{setBulkMode(v=>!v);setSelectedIds(new Set());}}
+            style={{background:"none",border:"1px solid #1E2A3A",color:bulkMode?"#00E5A0":"#4A5568",cursor:"pointer",fontFamily:"'Space Mono',monospace",fontSize:8,padding:"2px 7px",borderRadius:4,transition:"all .15s",marginLeft:"auto"}}>
+            {bulkMode?"✕ cancelar":"☑ sel."}
+          </button>
         </div>
 
         <div className="sidebar-search">
           <div className="search-inp-wrap">
             <span className="search-inp-icon">🔍</span>
-            <input ref={searchRef} className="search-inp" placeholder={searchMode==="producto"?"Buscar producto en tickets…":"Buscar tienda, fecha, importe…"}
+            <input ref={searchRef} className="search-inp" list="search-suggestions"
+              placeholder={searchMode==="producto"?"Buscar producto en tickets…":"Buscar tienda, fecha, importe…"}
               value={search} onChange={e=>setSearch(e.target.value)}/>
+            <datalist id="search-suggestions">
+              {searchMode==="tienda" && [...new Set(historial.map(t=>t.tienda).filter(Boolean))].map(s=><option key={s} value={s}/>)}
+            </datalist>
           </div>
         </div>
 
@@ -1350,14 +1491,32 @@ export default function App() {
             style={{background:"none",border:"none",color:"#4A5568",cursor:"pointer",fontSize:12,padding:"2px 4px",flexShrink:0}}>✕</button>}
         </div>
 
+        {bulkMode && selectedIds.size > 0 && (
+          <div style={{padding:"8px 10px",margin:"0 8px 4px",background:"rgba(0,229,160,.04)",border:"1px solid rgba(0,229,160,.15)",borderRadius:8}}>
+            <div style={{fontFamily:"'Space Mono',monospace",fontSize:8,color:"#00E5A0",marginBottom:6}}>{selectedIds.size} seleccionado{selectedIds.size>1?"s":""}</div>
+            <div style={{display:"flex",gap:4,alignItems:"center"}}>
+              <input value={bulkTag} onChange={e=>setBulkTag(e.target.value)} placeholder="Añadir tag…"
+                onKeyDown={e=>e.key==="Enter"&&bulkAddTag()}
+                style={{flex:1,background:"#0D1220",border:"1px solid #1E2A3A",borderRadius:5,padding:"5px 8px",color:"#E8EDF5",fontSize:11,fontFamily:"'Space Mono',monospace",outline:"none"}}/>
+              <button onClick={bulkAddTag} style={{background:"#00E5A0",border:"none",color:"#0A0E1A",borderRadius:5,padding:"5px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>+Tag</button>
+              <button onClick={bulkDeleteSelected} style={{background:"none",border:"1px solid rgba(239,68,68,.25)",color:"#F87171",borderRadius:5,padding:"5px 8px",fontSize:11,cursor:"pointer"}}>🗑️</button>
+            </div>
+          </div>
+        )}
+
         <div className="hist-list">
           {displayedTickets.length===0 ? (
             <div className="hist-empty">{search||tagFilter?"Sin resultados":"Sin tickets todavía"}</div>
           ) : displayedTickets.map(t=>(
-            <div key={t.id} className={`hist-item ${selected?.id===t.id?"active":""}`} onClick={()=>openDetail(t)}>
+            <div key={t.id}
+              className={`hist-item ${(selected?.id===t.id&&!bulkMode)||(bulkMode&&selectedIds.has(t.id))?"active":""}`}
+              onClick={()=>{ if(bulkMode){setSelectedIds(prev=>{const n=new Set(prev);n.has(t.id)?n.delete(t.id):n.add(t.id);return n;});}else{openDetail(t);}}}
+              onMouseEnter={e=>{ if(!window.matchMedia("(hover:hover)").matches)return; const r=e.currentTarget.getBoundingClientRect(); setTooltip({ticket:t,x:r.right+6,y:Math.min(r.top,window.innerHeight-240)}); }}
+              onMouseLeave={()=>setTooltip(null)}>
               <div className="hist-item-top">
-                <div className="hist-store">{t.tienda||"Ticket #"+t.id}</div>
-                <button className="del-btn" onClick={e=>deleteTicket(e,t.id)}>✕</button>
+                {bulkMode && <div style={{width:14,height:14,border:"1.5px solid",borderColor:selectedIds.has(t.id)?"#00E5A0":"#2D3748",borderRadius:3,background:selectedIds.has(t.id)?"#00E5A0":"transparent",flexShrink:0,marginRight:6,marginTop:2}}/>}
+                <div className="hist-store" style={{flex:1}}>{t.tienda||"Ticket #"+t.id}</div>
+                {!bulkMode && <button className="del-btn" onClick={e=>deleteTicket(e,t.id)}>✕</button>}
               </div>
               <div className="hist-meta">
                 <span className="hist-date">{t.fecha_compra||t.fecha_escaneo?.slice(0,10)}</span>
@@ -1407,7 +1566,7 @@ export default function App() {
           )}
 
           {view==="detail"&&selected
-            ? <TicketDetail key={selected.id} ticket={selected} onBack={()=>{setView("dash");setSelected(null);}} onRefresh={()=>{loadHistorial();loadTags();}}/>
+            ? <TicketDetail key={selected.id} ticket={selected} onBack={()=>{setView("dash");setSelected(null);}} onRefresh={()=>{loadHistorial();loadTags();}} navList={displayedTickets} onNavigate={openDetail}/>
             : view==="scan" ? <ScanPanel onSaved={loadHistorial} historial={historial} currentUser={currentUser}/>
             : view==="analytics" ? <Analytics historial={historial}/>
             : view==="advanced" ? <AdvancedAnalysis historial={historial}/>
@@ -1421,6 +1580,28 @@ export default function App() {
           }
         </div>
       </main>
+
+      {tooltip && (
+        <div style={{position:"fixed",left:tooltip.x,top:tooltip.y,zIndex:99,background:"#0D1220",border:"1px solid #1E2A3A",borderRadius:10,padding:"12px 14px",minWidth:220,maxWidth:280,pointerEvents:"none",boxShadow:"0 8px 32px rgba(0,0,0,.65)",animation:"fadeUp .12s ease"}}>
+          <div style={{fontWeight:700,fontSize:12,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tooltip.ticket.tienda||"Ticket #"+tooltip.ticket.id}</div>
+          <div style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#4A5568",marginBottom:7}}>{tooltip.ticket.fecha_compra} · {fmt(tooltip.ticket.total)}</div>
+          {(() => {
+            try {
+              const prods = JSON.parse(tooltip.ticket.datos_json||"{}").productos||[];
+              if (!prods.length) return <div style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#2D3748"}}>Sin productos</div>;
+              return (<>
+                {prods.slice(0,5).map((p,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11,padding:"3px 0",borderBottom:i<Math.min(prods.length,5)-1?"1px solid rgba(30,42,58,.4)":"none"}}>
+                    <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</span>
+                    <span style={{fontFamily:"'Space Mono',monospace",color:"#00E5A0",flexShrink:0,fontSize:10}}>{fmt(p.precio_total||p.precio_unitario)}</span>
+                  </div>
+                ))}
+                {prods.length>5 && <div style={{fontFamily:"'Space Mono',monospace",fontSize:8,color:"#4A5568",marginTop:4}}>+{prods.length-5} más</div>}
+              </>);
+            } catch { return null; }
+          })()}
+        </div>
+      )}
     </div>
   );
 }
