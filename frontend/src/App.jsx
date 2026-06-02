@@ -15,11 +15,12 @@ async function pdfToJpegBlob(file) {
   const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
   const page = await pdf.getPage(1);
   const base = page.getViewport({ scale: 1.0 });
-  const MAX_PX = 33000000;
+  const MAX_PX = 30000000; // safely under Groq's 33177600 px limit
   const scale = Math.min(2.0, Math.sqrt(MAX_PX / (base.width * base.height)));
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
-  canvas.width = viewport.width; canvas.height = viewport.height;
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: ctx, viewport }).promise;
