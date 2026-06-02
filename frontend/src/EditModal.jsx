@@ -100,7 +100,15 @@ export default function EditModal({ ticket, onClose, onSaved }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(meta)
       });
-      if (!r.ok) { setSaveError(`Error ${r.status} al guardar — ${await r.text()}`); return; }
+      if (!r.ok) { setSaveError(`Error ${r.status} — ${await r.text()}`); return; }
+
+      // Verify DB actually has the new value
+      const verify = await fetch(`${API}/tickets/${ticket.id}`);
+      const dbTicket = await verify.json();
+      if (dbTicket.fecha_compra !== meta.fecha_compra) {
+        setSaveError(`❗ DB no actualizó la fecha. Enviado: "${meta.fecha_compra}" — En DB: "${dbTicket.fecha_compra}". URL usada: ${API}`);
+        return;
+      }
 
       for (const p of productos) {
         if (p._deleted && p.id) {
