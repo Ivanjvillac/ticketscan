@@ -522,12 +522,15 @@ function ScanPanel({ onSaved, historial = [] }) {
   const processQueue = async () => {
     if (processing) return;
     setProcessing(true);
+    let processed = 0;
     for (let i = 0; i < queue.length; i++) {
       if (queue[i].status !== "pending") continue;
       if (!navigator.onLine) {
         setQueue(prev => prev.map((it,j) => j===i ? {...it, status:"offline"} : it));
         continue;
       }
+      // Wait between requests to avoid Groq rate limit (except before the first one)
+      if (processed > 0) await new Promise(r => setTimeout(r, 4000));
       setQueue(prev => prev.map((it,j) => j===i ? {...it, status:"processing"} : it));
       try {
         const datos = await analyzeFile(queue[i].file);
@@ -538,6 +541,7 @@ function ScanPanel({ onSaved, historial = [] }) {
         const msg = err.isDuplicate ? `Duplicado: ${err.message}` : err.message;
         setQueue(prev => prev.map((it,j) => j===i ? {...it, status:"error", error:msg} : it));
       }
+      processed++;
     }
     setProcessing(false);
   };
@@ -630,11 +634,17 @@ function ScanPanel({ onSaved, historial = [] }) {
           <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center"}}>
             <button className="btn btn-primary" onClick={()=>queueInputRef.current?.click()}>+ Añadir archivos</button>
             <input ref={queueInputRef} type="file" accept="image/*,application/pdf" multiple style={{display:"none"}} onChange={e=>addToQueue(e.target.files)}/>
-            {queue.some(q=>q.status==="pending")&&isOnline && (
-              <button className="btn btn-primary" onClick={processQueue} disabled={processing}>
-                {processing?<><span className="spinner"/>Procesando…</>:`⚡ Analizar ${queue.filter(q=>q.status==="pending").length}`}
-              </button>
-            )}
+            {queue.some(q=>q.status==="pending")&&isOnline && (() => {
+              const pending = queue.filter(q=>q.status==="pending").length;
+              const secs = pending > 1 ? Math.ceil((pending * 4) / 60) : null;
+              return (
+                <button className="btn btn-primary" onClick={processQueue} disabled={processing}>
+                  {processing
+                    ? <><span className="spinner"/>Procesando…</>
+                    : `⚡ Analizar ${pending}${secs ? ` (~${secs} min)` : ""}`}
+                </button>
+              );
+            })()}
             {queue.length>0 && <button className="btn btn-ghost" onClick={()=>setQueue([])}>Limpiar</button>}
           </div>
           {queue.length===0 ? (
