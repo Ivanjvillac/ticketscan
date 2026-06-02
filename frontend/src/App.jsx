@@ -8,6 +8,20 @@ import AdvancedAnalysis from "./AdvancedAnalysis";
 import PriceAlerts from "./PriceAlerts";
 import Trash from "./Trash";
 import * as XLSX from "xlsx";
+import * as pdfjsLib from "pdfjs-dist";
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).href;
+
+async function pdfToJpegBlob(file) {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 2.0 });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width; canvas.height = viewport.height;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return new Promise(res => canvas.toBlob(res, "image/jpeg", 0.92));
+}
 
 // Para acceso móvil en red local: cambia localhost por tu IP local (ej: 192.168.1.50)
 const LOCAL_IP = "localhost"; // ← PON AQUÍ TU IP LOCAL PARA MÓVIL
@@ -423,10 +437,20 @@ function ScanPanel({ onSaved }) {
     }
   }, [isOnline]);
 
-  const handleSingleFile = useCallback(f => {
-    if (!f || !f.type.startsWith("image/")) return;
-    setSingleResult(null); setSingleError(null); setSingleFile(f);
-    const r = new FileReader(); r.onload = e => setSingleImage(e.target.result); r.readAsDataURL(f);
+  const handleSingleFile = useCallback(async f => {
+    if (!f) return;
+    const isImg = f.type.startsWith("image/"), isPdf = f.type === "application/pdf";
+    if (!isImg && !isPdf) return;
+    setSingleResult(null); setSingleError(null);
+    let fileToUse = f;
+    if (isPdf) {
+      try {
+        const blob = await pdfToJpegBlob(f);
+        fileToUse = new File([blob], f.name.replace(/\.pdf$/i, ".jpg"), { type: "image/jpeg" });
+      } catch { setSingleError("No se pudo procesar el PDF."); return; }
+    }
+    setSingleFile(fileToUse);
+    const r = new FileReader(); r.onload = e => setSingleImage(e.target.result); r.readAsDataURL(fileToUse);
   }, []);
 
   const analyzeFile = async (file) => {
@@ -470,11 +494,19 @@ function ScanPanel({ onSaved }) {
     } catch (err) { setSingleError(err.message); } finally { setLoading(false); }
   };
 
-  const addToQueue = (files) => {
-    const newItems = Array.from(files).filter(f=>f.type.startsWith("image/")).map(f => ({
-      file: f, preview: URL.createObjectURL(f), status:"pending", result:null, error:null
+  const addToQueue = async (files) => {
+    const valid = Array.from(files).filter(f => f.type.startsWith("image/") || f.type === "application/pdf");
+    const items = await Promise.all(valid.map(async f => {
+      if (f.type === "application/pdf") {
+        try {
+          const blob = await pdfToJpegBlob(f);
+          const converted = new File([blob], f.name.replace(/\.pdf$/i, ".jpg"), { type: "image/jpeg" });
+          return { file: converted, preview: URL.createObjectURL(converted), status:"pending", result:null, error:null };
+        } catch { return null; }
+      }
+      return { file: f, preview: URL.createObjectURL(f), status:"pending", result:null, error:null };
     }));
-    setQueue(prev => [...prev, ...newItems]);
+    setQueue(prev => [...prev, ...items.filter(Boolean)]);
   };
 
   const processQueue = async () => {
@@ -535,11 +567,11 @@ function ScanPanel({ onSaved }) {
               onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
               onDrop={e=>{e.preventDefault();setDrag(false);handleSingleFile(e.dataTransfer.files[0]);}}
               onClick={()=>inputRef.current?.click()}>
-              <input ref={inputRef} type="file" accept="image/*" capture="environment"
+              <input ref={inputRef} type="file" accept="image/*,application/pdf"
                 onChange={e=>handleSingleFile(e.target.files[0])} onClick={e=>e.stopPropagation()}/>
               <span className="up-icon">📷</span>
               <div className="up-title">Sube o escanea tu ticket</div>
-              <div className="up-hint">Arrastra, haz clic, o <b>usa la cámara del móvil</b></div>
+              <div className="up-hint">Imagen o PDF — arrastra, haz clic, o <b>usa la cámara</b></div>
             </div>
           ) : (
             <div className="preview-wrap">
@@ -569,8 +601,8 @@ function ScanPanel({ onSaved }) {
       ) : (
         <>
           <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center"}}>
-            <button className="btn btn-primary" onClick={()=>queueInputRef.current?.click()}>+ Añadir imágenes</button>
-            <input ref={queueInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>addToQueue(e.target.files)}/>
+            <button className="btn btn-primary" onClick={()=>queueInputRef.current?.click()}>+ Añadir archivos</button>
+            <input ref={queueInputRef} type="file" accept="image/*,application/pdf" multiple style={{display:"none"}} onChange={e=>addToQueue(e.target.files)}/>
             {queue.some(q=>q.status==="pending")&&isOnline && (
               <button className="btn btn-primary" onClick={processQueue} disabled={processing}>
                 {processing?<><span className="spinner"/>Procesando…</>:`⚡ Analizar ${queue.filter(q=>q.status==="pending").length}`}
@@ -579,7 +611,7 @@ function ScanPanel({ onSaved }) {
             {queue.length>0 && <button className="btn btn-ghost" onClick={()=>setQueue([])}>Limpiar</button>}
           </div>
           {queue.length===0 ? (
-            <div className="center-empty" style={{marginTop:40}}><span className="ei">📦</span><p>Añade varias imágenes para procesarlas en lote</p></div>
+            <div className="center-empty" style={{marginTop:40}}><span className="ei">📦</span><p>Añade imágenes o PDFs para procesarlos en lote</p></div>
           ) : (
             <div className="queue-list">
               {queue.map((item,i)=>(
