@@ -232,8 +232,11 @@ app.get("/api/tickets/:id", async (req, res) => {
 
 app.put("/api/tickets/:id", async (req, res) => {
   try {
-    const { tienda,fecha_compra,hora,ticket_num,metodo_pago,subtotal,descuentos,iva,total,notas,deducible } = req.body;
+    const { tienda,fecha_compra,hora,ticket_num,metodo_pago,notas,deducible } = req.body;
     const id = parseInt(req.params.id, 10);
+    const num = v => (v === "" || v == null) ? null : parseFloat(v);
+    const subtotal = num(req.body.subtotal), descuentos = num(req.body.descuentos),
+          iva = num(req.body.iva), total = num(req.body.total);
 
     // Sync datos_json so OCR fields stay in sync with DB columns
     const { data: existing } = await supabase.from("tickets").select("datos_json").eq("id",id).single();
