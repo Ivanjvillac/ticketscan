@@ -735,7 +735,19 @@ function TicketDetail({ ticket, onBack, onRefresh }) {
 
   const merged = {
     ...(data.datos_json ? (() => { try { return JSON.parse(data.datos_json); } catch { return {}; } })() : {}),
-    ...data, fecha_compra: data.fecha_compra,
+    ...data,
+    // DB columns always win over datos_json OCR keys
+    fecha: data.fecha_compra,
+    fecha_compra: data.fecha_compra,
+    tienda: data.tienda,
+    total: data.total,
+    subtotal: data.subtotal,
+    descuentos: data.descuentos,
+    iva: data.iva,
+    hora: data.hora,
+    ticket_num: data.ticket_num,
+    metodo_pago: data.metodo_pago,
+    notas: data.notas,
     productos: data.productos?.length ? data.productos : [],
     tags: data.tags || [],
   };

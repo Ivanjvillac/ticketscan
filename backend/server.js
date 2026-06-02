@@ -232,7 +232,14 @@ app.get("/api/tickets/:id", async (req, res) => {
 
 app.put("/api/tickets/:id", async (req, res) => {
   const { tienda,fecha_compra,hora,ticket_num,metodo_pago,subtotal,descuentos,iva,total,notas,deducible } = req.body;
-  await supabase.from("tickets").update({ tienda,fecha_compra,hora,ticket_num,metodo_pago,subtotal,descuentos,iva,total,notas,deducible:deducible?1:0 }).eq("id",req.params.id);
+  // Fetch existing datos_json and patch editable fields so OCR data stays in sync
+  const { data: existing } = await supabase.from("tickets").select("datos_json").eq("id",req.params.id).single();
+  let datos_json = null;
+  try {
+    const parsed = JSON.parse(existing?.datos_json||"{}");
+    datos_json = JSON.stringify({ ...parsed, tienda,fecha:fecha_compra,hora,ticket_num,metodo_pago,subtotal,descuentos,iva,total,notas });
+  } catch {}
+  await supabase.from("tickets").update({ tienda,fecha_compra,hora,ticket_num,metodo_pago,subtotal,descuentos,iva,total,notas,deducible:deducible?1:0,...(datos_json?{datos_json}:{}) }).eq("id",req.params.id);
   res.json({ ok:true });
 });
 
