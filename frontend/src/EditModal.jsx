@@ -65,6 +65,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
   );
   const [newProd, setNewProd] = useState({ nombre:"", cantidad:"1", precio_unitario:"", precio_total:"" });
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   // Detect duplicates
   const nameCount = {};
@@ -91,16 +92,15 @@ export default function EditModal({ ticket, onClose, onSaved }) {
   };
 
   const save = async () => {
-    setSaving(true);
+    setSaving(true); setSaveError(null);
     try {
-      // Save ticket metadata
-      await fetch(`${API}/tickets/${ticket.id}`, {
+      const r = await fetch(`${API}/tickets/${ticket.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(meta)
       });
+      if (!r.ok) { setSaveError(`Error ${r.status} al guardar — ${await r.text()}`); return; }
 
-      // Handle products
       for (const p of productos) {
         if (p._deleted && p.id) {
           await fetch(`${API}/productos/${p.id}`, { method: "DELETE" });
@@ -123,9 +123,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
       }
       onSaved();
       onClose();
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { setSaveError(e.message); } finally { setSaving(false); }
   };
 
   return (
@@ -208,6 +206,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
           <button className="btn-save" style={{padding:"8px 14px",fontSize:12}} onClick={addProd}>+ Añadir</button>
         </div>
 
+        {saveError && <div style={{color:"#F87171",fontFamily:"'Space Mono',monospace",fontSize:11,marginBottom:8,padding:"8px 10px",background:"rgba(239,68,68,.08)",borderRadius:6}}>❌ {saveError}</div>}
         <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
           <button className="btn-cancel" onClick={onClose}>Cancelar</button>
           <button className="btn-save" onClick={save} disabled={saving}>
