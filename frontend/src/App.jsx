@@ -130,9 +130,8 @@ body{background:#0A0E1A;color:#E8EDF5;font-family:'Syne',sans-serif;min-height:1
 .online-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .main{flex:1;overflow-y:auto;position:relative;z-index:1}
 .main-inner{max-width:740px;margin:0 auto;padding:28px 24px 60px}
-.main-nav{display:flex;gap:3px;margin-bottom:22px;background:#111827;border:1px solid #1E2A3A;border-radius:10px;padding:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-shrink:0}
-.main-nav::-webkit-scrollbar{display:none}
-.nav-tab{flex-shrink:0;padding:8px 10px;border-radius:7px;border:none;background:transparent;color:#4A5568;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.main-nav{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:22px;background:#111827;border:1px solid #1E2A3A;border-radius:10px;padding:4px}
+.nav-tab{padding:7px 10px;border-radius:7px;border:none;background:transparent;color:#4A5568;font-family:'Syne',sans-serif;font-weight:700;font-size:11px;cursor:pointer;transition:all .15s}
 .nav-tab:hover{color:#E8EDF5}
 .nav-tab.active{background:#0A0E1A;color:#00E5A0;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .upload-zone{border:2px dashed #1E2A3A;border-radius:16px;padding:48px 32px;text-align:center;cursor:pointer;transition:all .2s;background:#111827;position:relative;overflow:hidden}
@@ -400,13 +399,14 @@ function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX
 }
 
 // ── Scan Panel ────────────────────────────────────────────────────────────────
-function ScanPanel({ onSaved }) {
+function ScanPanel({ onSaved, historial = [] }) {
   const [queue, setQueue] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [singleImage, setSingleImage] = useState(null);
   const [singleFile, setSingleFile] = useState(null);
   const [singleResult, setSingleResult] = useState(null);
   const [singleError, setSingleError] = useState(null);
+  const [dupWarning, setDupWarning] = useState(null); // { message, file }
   const [loading, setLoading] = useState(false);
   const [drag, setDrag] = useState(false);
   const [mode, setMode] = useState("single");
@@ -457,14 +457,18 @@ function ScanPanel({ onSaved }) {
     const r = new FileReader(); r.onload = e => setSingleImage(e.target.result); r.readAsDataURL(fileToUse);
   }, []);
 
-  const analyzeFile = async (file) => {
+  const analyzeFile = async (file, force = false) => {
     const b64 = await new Promise((res,rej) => {
       const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.onerror = rej; r.readAsDataURL(file);
     });
     const resp = await fetch(`${API}/analizar`, {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ imagen_base64: b64, media_type: file.type||"image/jpeg" })
+      body: JSON.stringify({ imagen_base64: b64, media_type: file.type||"image/jpeg", force })
     });
+    if (resp.status === 409) {
+      const err = await resp.json();
+      const e = new Error(err.error); e.isDuplicate = true; throw e;
+    }
     if (!resp.ok) { const err = await resp.json(); throw new Error(err.error||"Error"); }
     return resp.json();
   };
@@ -483,19 +487,21 @@ function ScanPanel({ onSaved }) {
       reader.readAsDataURL(singleFile);
       return;
     }
-    setLoading(true); setSingleError(null); setSingleResult(null);
+    setLoading(true); setSingleError(null); setSingleResult(null); setDupWarning(null);
     try {
       const datos = await analyzeFile(singleFile);
       setSingleResult(datos);
       onSaved();
       notificar("Ticket analizado", `${datos.tienda||"Ticket"} — ${fmt(datos.total)}`);
-      // Show price alerts if any triggered
       if (datos.alertas_disparadas?.length) {
         datos.alertas_disparadas.forEach(a => {
           notificar("🎯 Alerta de precio", `${a.producto.nombre}: ${fmt(a.precio_visto)} en ${a.tienda}`);
         });
       }
-    } catch (err) { setSingleError(err.message); } finally { setLoading(false); }
+    } catch (err) {
+      if (err.isDuplicate) { setDupWarning({ message: err.message, file: singleFile }); }
+      else setSingleError(err.message);
+    } finally { setLoading(false); }
   };
 
   const addToQueue = async (files) => {
@@ -529,13 +535,14 @@ function ScanPanel({ onSaved }) {
         onSaved();
         notificar("Ticket analizado", `${datos.tienda||datos.id} — ${fmt(datos.total)}`);
       } catch (err) {
-        setQueue(prev => prev.map((it,j) => j===i ? {...it, status:"error", error:err.message} : it));
+        const msg = err.isDuplicate ? `Duplicado: ${err.message}` : err.message;
+        setQueue(prev => prev.map((it,j) => j===i ? {...it, status:"error", error:msg} : it));
       }
     }
     setProcessing(false);
   };
 
-  const resetSingle = () => { setSingleImage(null); setSingleFile(null); setSingleResult(null); setSingleError(null); };
+  const resetSingle = () => { setSingleImage(null); setSingleFile(null); setSingleResult(null); setSingleError(null); setDupWarning(null); };
 
   const exportJSON = d => { const b=new Blob([JSON.stringify(d,null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=`ticket_${Date.now()}.json`; a.click(); };
   const exportCSV = d => {
@@ -592,6 +599,22 @@ function ScanPanel({ onSaved }) {
             </div>
           )}
           {loading && <div className="loading-card"><div className="load-label"><span className="spinner"/> Extrayendo datos…</div><div className="prog-track"><div className="prog-fill"/></div></div>}
+          {dupWarning && (
+            <div className="error-box" style={{background:"rgba(251,191,36,.06)",borderColor:"rgba(251,191,36,.3)"}}>
+              ⚠️ {dupWarning.message}
+              <div style={{display:"flex",gap:8,marginTop:10}}>
+                <button className="btn btn-ghost" style={{fontSize:12}} onClick={()=>setDupWarning(null)}>Cancelar</button>
+                <button className="btn btn-primary" style={{fontSize:12}} onClick={async()=>{
+                  setDupWarning(null); setLoading(true); setSingleError(null);
+                  try {
+                    const datos = await analyzeFile(dupWarning.file, true);
+                    setSingleResult(datos); onSaved();
+                    notificar("Ticket analizado", `${datos.tienda||"Ticket"} — ${fmt(datos.total)}`);
+                  } catch(e){ setSingleError(e.message); } finally{ setLoading(false); }
+                }}>Subir igualmente</button>
+              </div>
+            </div>
+          )}
           {singleError && <div className="error-box">⚠️ {singleError}</div>}
           {singleResult && (
             <TicketContent data={singleResult} ticketId={singleResult.id} onTagAdd={()=>{}}
@@ -1047,6 +1070,20 @@ export default function App() {
     }).catch(()=>{ loadHistorial(); loadTags(); });
   }, [loadHistorial, loadTags, token]);
 
+  // Keep Render.com backend warm (free tier spins down after 15 min inactivity)
+  useEffect(() => {
+    const ping = () => fetch(`${API}/check`).catch(()=>{});
+    const id = setInterval(ping, 4 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Reload when tab regains focus
+  useEffect(() => {
+    const handler = () => { if (document.visibilityState === "visible") { loadHistorial(); loadTags(); } };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [loadHistorial, loadTags]);
+
   const login = async () => {
     const r = await fetch(`${API}/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({password}) });
     const data = await r.json();
@@ -1201,7 +1238,7 @@ export default function App() {
 
           {view==="detail"&&selected
             ? <TicketDetail ticket={selected} onBack={()=>{setView("dash");setSelected(null);}} onRefresh={()=>{loadHistorial();loadTags();}}/>
-            : view==="scan" ? <ScanPanel onSaved={loadHistorial}/>
+            : view==="scan" ? <ScanPanel onSaved={loadHistorial} historial={historial}/>
             : view==="analytics" ? <Analytics historial={historial}/>
             : view==="advanced" ? <AdvancedAnalysis historial={historial}/>
             : view==="lista" ? <ShoppingList/>

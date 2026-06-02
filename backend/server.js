@@ -107,7 +107,7 @@ async function saveImage(ticketId, base64, mimeType) {
 // ── Analizar ticket ───────────────────────────────────────────────────────────
 app.post("/api/analizar", async (req, res) => {
   try {
-    const { imagen_base64, media_type } = req.body;
+    const { imagen_base64, media_type, force } = req.body;
     if (!imagen_base64) return res.status(400).json({ error:"Falta imagen_base64" });
     if (!process.env.GROQ_API_KEY) return res.status(500).json({ error:"Falta GROQ_API_KEY" });
 
@@ -154,6 +154,17 @@ Formato: {"tienda":"string o null","fecha":"DD/MM/YYYY o null","hora":"HH:MM o n
       }
     }
 
+    // Detectar duplicado (mismo tienda+fecha+total) salvo force=true
+    if (!force && datos.tienda && datos.fecha && datos.total != null) {
+      const { data: dups } = await supabase.from("tickets")
+        .select("id,tienda,fecha_compra,total").eq("tienda", datos.tienda)
+        .eq("fecha_compra", datos.fecha).is("deleted_at", null).limit(1);
+      if (dups?.length) {
+        const d = dups[0];
+        return res.status(409).json({ error:`Ticket duplicado: ya existe #${d.id} (${d.tienda}, ${d.fecha_compra}, ${d.total}€)`, duplicate: d });
+      }
+    }
+
     const { data: ticketRow, error: ticketErr } = await supabase.from("tickets").insert({
       tienda:datos.tienda||null, fecha_compra:datos.fecha||null, hora:datos.hora||null,
       ticket_num:datos.ticket_num||null, metodo_pago:datos.metodo_pago||null,
@@ -164,10 +175,7 @@ Formato: {"tienda":"string o null","fecha":"DD/MM/YYYY o null","hora":"HH:MM o n
     if (ticketErr) throw new Error(ticketErr.message);
 
     const ticketId = ticketRow.id;
-
-    // Guardar imagen
-    const imgUrl = await saveImage(ticketId, imagen_base64, media_type);
-    if (imgUrl) await supabase.from("tickets").update({ imagen_path: imgUrl }).eq("id", ticketId);
+    // No guardamos imagen en storage — datos ya extraídos, ahorramos espacio
 
     // Insertar productos
     if (datos.productos?.length) {
@@ -196,19 +204,20 @@ Formato: {"tienda":"string o null","fecha":"DD/MM/YYYY o null","hora":"HH:MM o n
       }
     }
 
-    res.json({ id:ticketId, ...datos, imagen_path:imgUrl, alertas_disparadas:triggered });
+    res.json({ id:ticketId, ...datos, alertas_disparadas:triggered });
   } catch (err) { console.error(err); res.status(500).json({ error:err.message }); }
 });
 
 // ── Tickets ───────────────────────────────────────────────────────────────────
 app.get("/api/tickets", async (req, res) => {
-  const { data } = await supabase.from("tickets").select("*").is("deleted_at",null).order("id",{ascending:false});
-  const tickets = data||[];
-  for (const t of tickets) {
-    const { data:tags } = await supabase.from("tags").select("tag").eq("ticket_id",t.id);
-    t.tags = (tags||[]).map(r=>r.tag);
-  }
-  res.json(tickets);
+  const [{ data: tickets }, { data: allTags }] = await Promise.all([
+    supabase.from("tickets").select("*").is("deleted_at",null).order("id",{ascending:false}),
+    supabase.from("tags").select("ticket_id,tag")
+  ]);
+  const tagMap = {};
+  for (const t of (allTags||[])) { if (!tagMap[t.ticket_id]) tagMap[t.ticket_id]=[]; tagMap[t.ticket_id].push(t.tag); }
+  for (const t of (tickets||[])) t.tags = tagMap[t.id]||[];
+  res.json(tickets||[]);
 });
 
 app.get("/api/tickets/:id", async (req, res) => {
