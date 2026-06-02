@@ -803,12 +803,6 @@ function TicketDetail({ ticket, onBack, onRefresh }) {
 
   return (
     <>
-      {data.imagen_path && (
-        <details style={{marginBottom:16}}>
-          <summary style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#4A5568",cursor:"pointer",userSelect:"none",marginBottom:8}}>📷 Ver foto original</summary>
-          <img src={`${UPLOADS}/${data.imagen_path}`} alt="Ticket original" className="gallery-img"/>
-        </details>
-      )}
       <TicketContent data={merged} ticketId={ticket.id} header={header}
         onExportJSON={exportJSON} onExportCSV={exportCSV} onExportXLSX={exportXLSX}
         onTagAdd={refresh} onTagRemove={removeTag}/>
