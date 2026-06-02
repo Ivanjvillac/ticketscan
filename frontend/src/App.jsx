@@ -411,8 +411,12 @@ function ScanPanel({ onSaved, historial = [] }) {
   const [drag, setDrag] = useState(false);
   const [mode, setMode] = useState("single");
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [cameraActive, setCameraActive] = useState(false);
   const inputRef = useRef();
   const queueInputRef = useRef();
+  const videoRef = useRef();
+  const canvasRef = useRef();
+  const streamRef = useRef();
 
   useEffect(() => {
     const on = () => setIsOnline(true);
@@ -433,6 +437,36 @@ function ScanPanel({ onSaved, historial = [] }) {
     }
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
+
+  useEffect(() => () => { streamRef.current?.getTracks().forEach(t=>t.stop()); }, []);
+
+  const startCamera = async () => {
+    setSingleError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" }, audio:false });
+      streamRef.current = stream;
+      setCameraActive(true);
+      setTimeout(() => { if (videoRef.current) videoRef.current.srcObject = stream; }, 50);
+    } catch(e) { setSingleError("Cámara no disponible: " + e.message); }
+  };
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach(t=>t.stop());
+    streamRef.current = null;
+    setCameraActive(false);
+  };
+
+  const captureFrame = () => {
+    const v = videoRef.current; if (!v) return;
+    const c = canvasRef.current;
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext("2d").drawImage(v, 0, 0);
+    c.toBlob(blob => {
+      stopCamera();
+      const file = new File([blob], `capture_${Date.now()}.jpg`, { type:"image/jpeg" });
+      handleSingleFile(file);
+    }, "image/jpeg", 0.92);
+  };
 
   // Auto-process queue when back online
   useEffect(() => {
@@ -577,17 +611,31 @@ function ScanPanel({ onSaved, historial = [] }) {
 
       {mode==="single" ? (
         <>
-          {!singleImage ? (
-            <div className={`upload-zone ${drag?"drag":""}`}
-              onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
-              onDrop={e=>{e.preventDefault();setDrag(false);handleSingleFile(e.dataTransfer.files[0]);}}
-              onClick={()=>inputRef.current?.click()}>
-              <input ref={inputRef} type="file" accept="image/*,application/pdf"
-                onChange={e=>handleSingleFile(e.target.files[0])} onClick={e=>e.stopPropagation()}/>
-              <span className="up-icon">📷</span>
-              <div className="up-title">Sube o escanea tu ticket</div>
-              <div className="up-hint">Imagen o PDF — arrastra, haz clic, o <b>usa la cámara</b></div>
+          <canvas ref={canvasRef} style={{display:"none"}}/>
+          {cameraActive ? (
+            <div style={{position:"relative",borderRadius:12,overflow:"hidden",background:"#000",marginBottom:8}}>
+              <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",display:"block",maxHeight:340,objectFit:"cover"}}/>
+              <div style={{position:"absolute",bottom:12,left:0,right:0,display:"flex",justifyContent:"center",gap:12}}>
+                <button className="btn btn-ghost" onClick={stopCamera} style={{fontSize:13}}>✕ Cancelar</button>
+                <button className="btn btn-primary" onClick={captureFrame} style={{fontSize:13,padding:"10px 24px"}}>⏺ Capturar</button>
+              </div>
             </div>
+          ) : !singleImage ? (
+            <>
+              <div className={`upload-zone ${drag?"drag":""}`}
+                onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
+                onDrop={e=>{e.preventDefault();setDrag(false);handleSingleFile(e.dataTransfer.files[0]);}}
+                onClick={()=>inputRef.current?.click()}>
+                <input ref={inputRef} type="file" accept="image/*,application/pdf"
+                  onChange={e=>handleSingleFile(e.target.files[0])} onClick={e=>e.stopPropagation()}/>
+                <span className="up-icon">📷</span>
+                <div className="up-title">Sube o escanea tu ticket</div>
+                <div className="up-hint">Imagen o PDF — arrastra, haz clic, o <b>usa la cámara</b></div>
+              </div>
+              <button className="btn btn-ghost" style={{width:"100%",marginTop:8,fontSize:13}} onClick={startCamera}>
+                📸 Cámara en tiempo real
+              </button>
+            </>
           ) : (
             <div className="preview-wrap">
               <img src={singleImage} alt="Ticket"/>
@@ -673,6 +721,17 @@ function ScanPanel({ onSaved, historial = [] }) {
   );
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function parseTicketDate(str) {
+  if (!str) return null;
+  if (str.includes("/")) {
+    const [d,m,y] = str.split("/");
+    const dt = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  const dt = new Date(str); return isNaN(dt.getTime()) ? null : dt;
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function DashboardView({ historial, onOpenTicket }) {
   if (!historial.length) return (
@@ -685,8 +744,34 @@ function DashboardView({ historial, onOpenTicket }) {
   historial.forEach(t=>{const k=t.tienda||"Desconocida";if(!storeMap[k])storeMap[k]={count:0,total:0};storeMap[k].count++;storeMap[k].total+=t.total||0;});
   const stores=Object.entries(storeMap).sort((a,b)=>b[1].total-a[1].total);
   const maxStoreTotal=stores[0]?.[1].total||1;
+
+  // Weekly summary
+  const now = new Date();
+  const dow = now.getDay();
+  const thisMonday = new Date(now); thisMonday.setDate(now.getDate()+(dow===0?-6:1-dow)); thisMonday.setHours(0,0,0,0);
+  const lastMonday = new Date(thisMonday); lastMonday.setDate(thisMonday.getDate()-7);
+  const thisSunday = new Date(thisMonday); thisSunday.setDate(thisMonday.getDate()+6); thisSunday.setHours(23,59,59,999);
+  const lastSunday = new Date(lastMonday); lastSunday.setDate(lastMonday.getDate()+6); lastSunday.setHours(23,59,59,999);
+  const weekFilter = (from,to) => historial.filter(t=>{ const d=parseTicketDate(t.fecha_compra); return d&&d>=from&&d<=to; });
+  const thisWeek = weekFilter(thisMonday, thisSunday);
+  const lastWeek = weekFilter(lastMonday, lastSunday);
+  const thisWeekTotal = thisWeek.reduce((s,t)=>s+(t.total||0),0);
+  const lastWeekTotal = lastWeek.reduce((s,t)=>s+(t.total||0),0);
+  const weekDiff = lastWeekTotal>0 ? Math.round(((thisWeekTotal-lastWeekTotal)/lastWeekTotal)*1000)/10 : null;
+
   return (
     <div style={{animation:"fadeUp .35s ease"}}>
+      <div className="sec-label">Esta semana</div>
+      <div className="dash-grid" style={{marginBottom:22}}>
+        <div className="dash-card"><div className="dash-label">Esta semana</div><div className="dash-val" style={{color:"#00E5A0"}}>{fmt(thisWeekTotal)}</div><div className="dash-sub">{thisWeek.length} ticket{thisWeek.length!==1?"s":""}</div></div>
+        <div className="dash-card"><div className="dash-label">Semana pasada</div><div className="dash-val">{fmt(lastWeekTotal)}</div><div className="dash-sub">{lastWeek.length} ticket{lastWeek.length!==1?"s":""}</div></div>
+        <div className="dash-card"><div className="dash-label">Diferencia</div>
+          <div className="dash-val" style={{color:weekDiff==null?"#4A5568":weekDiff>0?"#F87171":"#34D399"}}>
+            {weekDiff==null?"—":weekDiff>0?`+${weekDiff}%`:`${weekDiff}%`}
+          </div>
+          <div className="dash-sub">{weekDiff==null?"sin datos prev.":weekDiff>0?"más que la semana pasada":"menos que la semana pasada"}</div>
+        </div>
+      </div>
       <div className="sec-label">Resumen</div>
       <div className="dash-grid">
         <div className="dash-card"><div className="dash-label">Total gastado</div><div className="dash-val" style={{color:"#00E5A0"}}>{fmt(totalGastado)}</div><div className="dash-sub">{historial.length} tickets</div></div>
@@ -1012,6 +1097,8 @@ export default function App() {
   const [fullTextResults, setFullTextResults] = useState(null);
   const [sort, setSort] = useState("newest");
   const [tagFilter, setTagFilter] = useState(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [allTags, setAllTags] = useState([]);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [token, setToken] = useState(() => localStorage.getItem("ts_token")||"noauth");
@@ -1128,6 +1215,13 @@ export default function App() {
         .filter(t => !search || (t.tienda||"").toLowerCase().includes(search.toLowerCase()) ||
           (t.fecha_compra||"").includes(search) || (t.total!=null&&String(t.total).includes(search)))
         .filter(t => !tagFilter || (t.tags||[]).includes(tagFilter))
+        .filter(t => {
+          if (!dateFrom && !dateTo) return true;
+          const d = parseTicketDate(t.fecha_compra); if (!d) return true;
+          if (dateFrom && d < new Date(dateFrom+"T00:00:00")) return false;
+          if (dateTo && d > new Date(dateTo+"T23:59:59")) return false;
+          return true;
+        })
         .sort((a,b) => {
           if (sort==="newest") return b.id-a.id;
           if (sort==="oldest") return a.id-b.id;
@@ -1211,6 +1305,17 @@ export default function App() {
           {[["newest","↓ Fecha"],["oldest","↑ Fecha"],["highest","↓ €"],["lowest","↑ €"]].map(([v,label])=>(
             <button key={v} className={`sort-btn ${sort===v?"active":""}`} onClick={()=>setSort(v)}>{label}</button>
           ))}
+        </div>
+        <div style={{padding:"4px 12px 6px",display:"flex",gap:4,alignItems:"center"}}>
+          <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+            style={{flex:1,background:"#111827",border:"1px solid #1E2A3A",borderRadius:6,padding:"5px 6px",color:dateFrom?"#E8EDF5":"#4A5568",fontSize:11,fontFamily:"'Space Mono',monospace",colorScheme:"dark",outline:"none"}}
+            title="Desde"/>
+          <span style={{color:"#2D3748",fontSize:10,flexShrink:0}}>—</span>
+          <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+            style={{flex:1,background:"#111827",border:"1px solid #1E2A3A",borderRadius:6,padding:"5px 6px",color:dateTo?"#E8EDF5":"#4A5568",fontSize:11,fontFamily:"'Space Mono',monospace",colorScheme:"dark",outline:"none"}}
+            title="Hasta"/>
+          {(dateFrom||dateTo) && <button onClick={()=>{setDateFrom("");setDateTo("");}}
+            style={{background:"none",border:"none",color:"#4A5568",cursor:"pointer",fontSize:12,padding:"2px 4px",flexShrink:0}}>✕</button>}
         </div>
 
         <div className="hist-list">
