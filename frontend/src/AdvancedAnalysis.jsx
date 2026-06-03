@@ -91,12 +91,16 @@ function NutricionalTab({ historial }) {
 
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
+  const hasTickets = historial.length > 0;
 
   useEffect(() => {
+    if (!hasTickets && retry === 0) return; // wait for backend to be warm
+    setLoading(true);
     fetch(`${API}/stats/productos`).then(r=>r.json())
       .then(d=>setProductos(Array.isArray(d)?d:[])).catch(()=>setProductos([]))
       .finally(()=>setLoading(false));
-  }, []);
+  }, [hasTickets, retry]);
 
   const stats = useMemo(() => {
     const catMap = {};
@@ -124,7 +128,11 @@ function NutricionalTab({ historial }) {
   }, [productos]);
 
   if (loading) return <div style={{textAlign:"center",padding:40,color:"#4A5568",fontFamily:"'Space Mono',monospace",fontSize:12}}><span className="spin-sm" style={{marginRight:8}}/>Calculando…</div>;
-  if (!productos.length) return <div className="an-empty">Sin productos registrados.</div>;
+  if (!productos.length) return (
+    <div className="an-empty">Sin productos registrados.
+      <br/><button onClick={()=>setRetry(c=>c+1)} style={{marginTop:12,background:"#00E5A0",border:"none",color:"#0A0E1A",padding:"8px 18px",borderRadius:8,fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer"}}>🔄 Reintentar</button>
+    </div>
+  );
 
   const scoreColor = stats.score>=70?"#00E5A0":stats.score>=50?"#FCD34D":"#F87171";
   const co2Arboles = Math.round(stats.co2Total/21);
@@ -212,16 +220,23 @@ function NutricionalTab({ historial }) {
   );
 }
 
-function MarcasTab() {
+function MarcasTab({ historialLen = 0 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    if (!historialLen && retry === 0) return;
+    setLoading(true);
     fetch(`${API}/stats/marcas`).then(r=>r.json()).then(setData).catch(()=>setData(null)).finally(()=>setLoading(false));
-  }, []);
+  }, [historialLen > 0, retry]);
 
   if (loading) return <div style={{textAlign:"center",padding:40,color:"#4A5568",fontFamily:"'Space Mono',monospace",fontSize:12}}><span className="spin-sm" style={{marginRight:8}}/>Analizando marcas…</div>;
-  if (!data) return <div className="an-empty">Sin datos suficientes.</div>;
+  if (!data) return (
+    <div className="an-empty">Sin datos suficientes.
+      <br/><button onClick={()=>setRetry(c=>c+1)} style={{marginTop:12,background:"#00E5A0",border:"none",color:"#0A0E1A",padding:"8px 18px",borderRadius:8,fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13,cursor:"pointer"}}>🔄 Reintentar</button>
+    </div>
+  );
 
   const totalGasto = data.blancaGasto + data.marcaGasto || 1;
 
@@ -391,7 +406,7 @@ export default function AdvancedAnalysis({ historial }) {
       </div>
       {tab==="nutricional" && <NutricionalTab historial={historial}/>}
       {tab==="co2" && <NutricionalTab historial={historial}/>}
-      {tab==="marcas" && <MarcasTab/>}
+      {tab==="marcas" && <MarcasTab historialLen={historial.length}/>}
       {tab==="anomalias" && <AnomaliaTab historial={historial}/>}
     </div>
   );
