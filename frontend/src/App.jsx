@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import Analytics from "./Analytics";
 import Budget from "./Budget";
 import ShoppingList from "./ShoppingList";
@@ -244,12 +244,32 @@ body{background:#0A0E1A;color:#E8EDF5;font-family:'Syne',sans-serif;min-height:1
 .custom-cat-row:last-child{border-bottom:none}
 .form-inp-sm{background:#0D1220;border:1px solid #1E2A3A;border-radius:6px;padding:6px 10px;color:#E8EDF5;font-size:12px;font-family:'Syne',sans-serif;outline:none;transition:border-color .15s}
 .form-inp-sm:focus{border-color:rgba(0,229,160,.4)}
+.fab{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));right:18px;width:54px;height:54px;border-radius:50%;background:#00E5A0;color:#0A0E1A;border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 20px rgba(0,229,160,.45);z-index:30;display:none;align-items:center;justify-content:center;transition:transform .15s,box-shadow .15s}
+.fab:active{transform:scale(.9);box-shadow:0 2px 10px rgba(0,229,160,.3)}
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:29;backdrop-filter:blur(2px);cursor:pointer}
+.mobile-historial-btn{display:none}
+.sidebar-close-mobile{display:none!important}
 @media(max-width:680px){
-  .app{flex-direction:column}
-  .sidebar{width:100%;max-height:260px;height:auto;position:relative}
-  .hist-list{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:0 10px 10px;flex-wrap:nowrap}
-  .hist-item{min-width:160px;flex-shrink:0}
+  .fab{display:flex}
+  .sidebar-backdrop{display:block}
+  .mobile-historial-btn{display:flex;align-items:center;gap:8px;background:#111827;border:1px solid #1E2A3A;color:#E8EDF5;border-radius:8px;padding:9px 14px;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;margin-bottom:16px;width:100%}
+  .sidebar-close-mobile{display:flex!important;background:none;border:none;color:#4A5568;font-size:22px;cursor:pointer;padding:4px 8px;border-radius:6px;flex-shrink:0}
+  .sidebar{position:fixed;top:0;left:0;bottom:0;width:88%;max-width:310px;height:100dvh;z-index:30;transform:translateX(-100%);transition:transform .28s cubic-bezier(.4,0,.2,1);max-height:100%;overflow:hidden}
+  .sidebar.sidebar-open{transform:translateX(0)}
+  .main-nav{position:fixed;bottom:0;left:0;right:0;padding-bottom:env(safe-area-inset-bottom);border-radius:0;border:none;border-top:1px solid #1E2A3A;margin:0;z-index:20;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;padding-left:4px;padding-right:4px;padding-top:6px;scrollbar-width:none;gap:2px;background:#111827}
+  .main-nav::-webkit-scrollbar{display:none}
+  .nav-tab{font-size:10px;padding:8px 12px;flex-shrink:0;white-space:nowrap;min-height:44px}
+  .main{width:100%}
+  .main-inner{padding:16px 14px calc(80px + env(safe-area-inset-bottom)) 14px}
   .dash-grid{grid-template-columns:1fr 1fr}
+  .hist-item{padding:12px 12px;min-height:44px}
+  .del-btn{min-width:36px;min-height:36px;display:flex;align-items:center;justify-content:center}
+  .btn{min-height:44px}
+  .nav-tab.active{box-shadow:none;border-bottom:2px solid #00E5A0;border-radius:0;background:transparent;color:#00E5A0;padding-bottom:6px}
+}
+@media(min-width:681px){
+  .fab{display:none}
+  .mobile-historial-btn{display:none}
 }
 `;
 
@@ -1229,6 +1249,7 @@ export default function App() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkTag, setBulkTag] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("ts_theme")||"dark");
   const [showShortcuts, setShowShortcuts] = useState(false);
   const searchRef = useRef();
@@ -1363,29 +1384,32 @@ export default function App() {
     const r = await fetch(`${API}/tickets/${ticket.id}`, { headers:authHeaders() });
     const full = await r.json();
     setSelected(full); setView("detail");
+    setSidebarOpen(false);
     document.querySelector(".main")?.scrollTo(0, 0);
   };
 
-  const displayedTickets = (searchMode==="producto" && fullTextResults)
-    ? fullTextResults
-    : historial
-        .filter(t => !search || (t.tienda||"").toLowerCase().includes(search.toLowerCase()) ||
-          (t.fecha_compra||"").includes(search) || (t.total!=null&&String(t.total).includes(search)))
-        .filter(t => !tagFilter || (t.tags||[]).includes(tagFilter))
-        .filter(t => {
-          if (!dateFrom && !dateTo) return true;
-          const d = parseTicketDate(t.fecha_compra); if (!d) return true;
-          if (dateFrom && d < new Date(dateFrom+"T00:00:00")) return false;
-          if (dateTo && d > new Date(dateTo+"T23:59:59")) return false;
-          return true;
-        })
-        .sort((a,b) => {
-          if (sort==="newest") return b.id-a.id;
-          if (sort==="oldest") return a.id-b.id;
-          if (sort==="highest") return (b.total||0)-(a.total||0);
-          if (sort==="lowest") return (a.total||0)-(b.total||0);
-          return 0;
-        });
+  const displayedTickets = useMemo(() => (
+    (searchMode==="producto" && fullTextResults)
+      ? fullTextResults
+      : historial
+          .filter(t => !search || (t.tienda||"").toLowerCase().includes(search.toLowerCase()) ||
+            (t.fecha_compra||"").includes(search) || (t.total!=null&&String(t.total).includes(search)))
+          .filter(t => !tagFilter || (t.tags||[]).includes(tagFilter))
+          .filter(t => {
+            if (!dateFrom && !dateTo) return true;
+            const d = parseTicketDate(t.fecha_compra); if (!d) return true;
+            if (dateFrom && d < new Date(dateFrom+"T00:00:00")) return false;
+            if (dateTo && d > new Date(dateTo+"T23:59:59")) return false;
+            return true;
+          })
+          .sort((a,b) => {
+            if (sort==="newest") return b.id-a.id;
+            if (sort==="oldest") return a.id-b.id;
+            if (sort==="highest") return (b.total||0)-(a.total||0);
+            if (sort==="lowest") return (a.total||0)-(b.total||0);
+            return 0;
+          })
+  ), [historial, search, searchMode, fullTextResults, tagFilter, dateFrom, dateTo, sort]);
 
   if (needsAuth) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#0A0E1A"}}>
@@ -1423,15 +1447,18 @@ export default function App() {
 
       {showShortcuts && <ShortcutsOverlay onClose={()=>setShowShortcuts(false)}/>}
 
-      <aside className="sidebar">
+      {sidebarOpen && <div className="sidebar-backdrop" onClick={()=>setSidebarOpen(false)}/>}
+
+      <aside className={`sidebar${sidebarOpen?" sidebar-open":""}`}>
         <div className="sidebar-header">
-          <div className="logo">
+          <div className="logo" style={{flex:1}}>
             <div className="logo-icon">🧾</div>
             <div>
               <div className="logo-text">Ticket<span>Scan</span></div>
               <div className="logo-sub">Escáner inteligente</div>
             </div>
           </div>
+          <button className="sidebar-close-mobile" onClick={()=>setSidebarOpen(false)}>✕</button>
         </div>
 
         {backendOK===false && (
@@ -1555,8 +1582,18 @@ export default function App() {
         </div>
       </aside>
 
+      {view!=="scan" && (
+        <button className="fab" onClick={()=>{setView("scan");setSelected(null);}} title="Escanear ticket">📷</button>
+      )}
+
       <main className="main">
         <div className="main-inner">
+          {view!=="detail" && view!=="scan" && (
+            <button className="mobile-historial-btn" onClick={()=>setSidebarOpen(true)}>
+              🧾 Historial <span style={{fontFamily:"'Space Mono',monospace",fontSize:10,background:"rgba(0,229,160,.15)",color:"#00E5A0",borderRadius:20,padding:"1px 7px",marginLeft:4}}>{displayedTickets.length}</span>
+              <span style={{marginLeft:"auto",color:"#4A5568"}}>→</span>
+            </button>
+          )}
           {view!=="detail" && (
             <div className="main-nav">
               {navItems.map(([v,l])=>(

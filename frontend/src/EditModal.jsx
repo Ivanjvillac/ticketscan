@@ -13,6 +13,13 @@ const css = `
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;backdrop-filter:blur(4px)}
 .modal-box{background:#0D1220;border:1px solid #1E2A3A;border-radius:16px;width:100%;max-width:700px;margin:auto;padding:24px;animation:slideUp .25s ease}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:680px){
+  .modal-overlay{align-items:flex-end;padding:0}
+  .modal-box{border-radius:20px 20px 0 0;max-height:92dvh;overflow-y:auto;margin:0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));animation:slideUpMobile .25s ease}
+  @keyframes slideUpMobile{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  .form-grid{grid-template-columns:1fr}
+  .btn-save,.btn-cancel{min-height:48px;font-size:16px}
+}
 .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
 .modal-title{font-size:16px;font-weight:800}
 .modal-close{background:none;border:none;color:#4A5568;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px;transition:color .15s}
