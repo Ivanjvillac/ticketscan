@@ -1563,14 +1563,6 @@ export default function App() {
     return historial.filter(t=>{const d=parseTicketDate(t.fecha_compra);return d&&d.getFullYear()===y&&d.getMonth()===adjM;}).reduce((s,t)=>s+(t.total||0),0);
   }, [historial]);
 
-  const cancelDelete = useCallback((id) => {
-    setUndoQueue(prev => {
-      const q=prev.find(q=>q.id===id); if(q)clearTimeout(q.timerId);
-      return prev.filter(q=>q.id!==id);
-    });
-    loadHistorial();
-  }, [loadHistorial]);
-
   // Keyboard shortcuts
   useEffect(() => {
     const handler = e => {
@@ -1610,6 +1602,14 @@ export default function App() {
       setHistorial(await r.json()); setBackendOK(true);
     } catch { setBackendOK(false); }
   }, [token]);
+
+  const cancelDelete = useCallback((id) => {
+    setUndoQueue(prev => {
+      const q=prev.find(q=>q.id===id); if(q)clearTimeout(q.timerId);
+      return prev.filter(q=>q.id!==id);
+    });
+    loadHistorial();
+  }, [loadHistorial]);
 
   const loadTags = useCallback(async () => {
     try { const r=await fetch(`${API}/tags`,{headers:{"Authorization":`Bearer ${token}`}}); if(r.ok) setAllTags(await r.json()); } catch {}
