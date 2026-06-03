@@ -34,6 +34,32 @@ const NUTRI = {
   "Otros":               { grupo:"Otros",             color:"#475569", puntos:null, co2:0.3 },
 };
 
+const STAR_MEANING = {
+  1: "Procesado — limitar consumo. Busca alternativas más naturales.",
+  2: "Con moderación — ocasionalmente está bien, no como base diaria.",
+  3: "Buena opción — incluir regularmente en la dieta.",
+  4: "Muy nutritivo — parte esencial de una dieta equilibrada.",
+  5: "Óptimo — máxima prioridad nutricional. Incluir a diario."
+};
+const GROUP_TIPS = {
+  "Frutas y verduras": "La OMS recomienda mínimo el 30% del gasto alimentario en frutas y verduras. Son la base de la dieta mediterránea y protegen contra enfermedades crónicas.",
+  "Proteína magra": "Pescado, marisco y legumbres tienen la mejor relación calidad nutricional / impacto medioambiental. Priorízalos sobre la carne roja.",
+  "Proteína": "Las carnes rojas generan alto CO₂ y en exceso se asocian a riesgo cardiovascular. Intenta no superar el 20% del gasto y alterna con pescado o legumbres.",
+  "Proteína procesada": "La OMS clasifica los embutidos como cancerígenos grupo 1. Limita a menos del 5% del gasto y elige versiones con menos sodio y aditivos.",
+  "Lácteos": "Buena fuente de calcio y proteína completa. Un 15-20% del gasto es adecuado. Prefiere opciones sin azúcar añadido (yogur natural, queso fresco).",
+  "Carbohidratos": "Pan y bollería industrial están muy procesados y tienen alto índice glucémico. Elige versiones integrales, masa madre o artesanas.",
+  "Carbohidratos comp": "Pasta, arroz, legumbres y avena son los mejores carbohidratos: fibra, proteína vegetal y liberación lenta de energía. Excelente base alimentaria.",
+  "Bebidas": "Las bebidas con azúcar disparan el consumo calórico vacío. Prioriza agua y limita refrescos, zumos industriales y bebidas energéticas.",
+  "Dulces/snacks": "Los ultraprocesados deben ser menos del 5% del gasto. Sustitúyelos por frutos secos, fruta fresca o chocolate negro >70%.",
+  "Congelados": "Los congelados sin salsas (verduras, pescado) conservan casi el mismo valor nutricional que el fresco. Evita precocinados y platos preparados.",
+  "Conservas": "Válidas si son al natural o en su jugo. Vigila el sodio en salmuera y el aceite añadido en conservas de pescado.",
+  "Grasas/condimentos": "Aceite de oliva virgen extra y especias son muy saludables. Limita salsas industriales (ketchup, mayonesa) — llevan azúcar, sal y aditivos.",
+  "No alimentario": "Los productos de limpieza e higiene no afectan tu puntuación nutricional.",
+  "Mascotas": "El gasto en mascotas no se computa en la puntuación nutricional.",
+  "Infantil": "Alimentación especial para bebés — no se pondera en la puntuación general.",
+  "Otros": "Productos sin categoría nutricional específica."
+};
+
 const css = `
 .aa-wrap{animation:fadeUp .35s ease}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -52,8 +78,15 @@ const css = `
 .nutri-val{font-size:18px;font-weight:800}
 .nutri-sub{font-family:'Space Mono',monospace;font-size:9px;color:#4A5568;margin-top:3px}
 .score-ring{display:flex;align-items:center;justify-content:center;width:80px;height:80px;border-radius:50%;border:4px solid;font-size:24px;font-weight:800;margin:0 auto 16px}
-.pie-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(30,42,58,.5)}
+.pie-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid rgba(30,42,58,.5);cursor:pointer;border-radius:6px;transition:background .12s;margin:0 -6px}
 .pie-row:last-child{border-bottom:none}
+.pie-row:hover{background:rgba(0,229,160,.04)}
+.pie-row.expanded{background:rgba(0,229,160,.04)}
+.nutri-card{cursor:pointer;transition:border-color .15s,background .15s}
+.nutri-card:hover{border-color:rgba(0,229,160,.3);background:rgba(0,229,160,.04)}
+.nutri-card.expanded{border-color:rgba(0,229,160,.35);background:rgba(0,229,160,.05)}
+.tip-panel{margin-top:8px;padding:9px 11px;background:rgba(0,0,0,.3);border-radius:7px;border-left:2px solid #00E5A0;font-size:12px;line-height:1.55;color:#A0AEC0;animation:fadeUp .15s ease}
+.tip-score{font-family:'Space Mono',monospace;font-size:9px;color:#00E5A0;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
 .pie-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .pie-name{font-size:12px;font-weight:600;flex:1}
 .pie-bar-wrap{width:80px;height:5px;background:#1E2A3A;border-radius:3px;overflow:hidden}
@@ -93,6 +126,8 @@ function NutricionalTab({ historial }) {
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const hasTickets = historial.length > 0;
+  const [activeGroup, setActiveGroup] = useState(null);
+  const [activeCard, setActiveCard] = useState(null);
 
   useEffect(() => {
     if (!hasTickets && retry === 0) return; // wait for backend to be warm
@@ -147,58 +182,83 @@ function NutricionalTab({ historial }) {
       </div>
 
       <div className="sec-label">Puntuación nutricional de tu cesta</div>
-      <div style={{background:"#111827",border:"1px solid #1E2A3A",borderRadius:12,padding:"20px",marginBottom:20,textAlign:"center"}}>
+      <div className={`nutri-card${activeCard==="score"?" expanded":""}`} style={{borderRadius:12,padding:"20px",marginBottom:20,textAlign:"center"}} onClick={()=>setActiveCard(v=>v==="score"?null:"score")}>
         <div className="score-ring" style={{borderColor:scoreColor,color:scoreColor}}>{stats.score}</div>
         <div style={{fontSize:14,fontWeight:700,color:scoreColor,marginBottom:4}}>
           {stats.score>=70?"Cesta saludable 🌿":stats.score>=50?"Cesta mejorable ⚡":"Cesta poco equilibrada ⚠️"}
         </div>
         <div style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"#4A5568"}}>
-          Score 0–100 basado en proporción de alimentos saludables vs procesados
+          Score 0–100 · toca para entender cómo se calcula
         </div>
+        {activeCard==="score" && (
+          <div className="tip-panel" style={{textAlign:"left"}}>
+            <div className="tip-score">Cómo se calcula</div>
+            El score pondera cada euro gastado según el valor nutricional de su categoría (1–5 estrellas). Cuanto más gastas en alimentos de alta puntuación (frutas, verduras, proteína magra), mayor es tu score.
+            <br/><br/>
+            <strong style={{color:"#E8EDF5"}}>Escala:</strong><br/>
+            🔴 0-49 · Cesta poco equilibrada — muchos procesados<br/>
+            🟡 50-69 · Cesta mejorable — base correcta con margen<br/>
+            🟢 70-100 · Cesta saludable — excelente distribución<br/>
+            <br/>
+            {stats.score < 70 && <><strong style={{color:"#00E5A0"}}>Consejo principal:</strong> {stats.score<50?"Reduce drásticamente los ultraprocesados y aumenta frutas/verduras.":"Incrementa frutas/verduras y reduce proteína procesada para superar 70."}</>}
+          </div>
+        )}
       </div>
 
-      <div className="nutri-grid">
-        <div className="nutri-card">
-          <div className="nutri-label">Huella CO₂ estimada</div>
-          <div className="nutri-val" style={{color:"#34D399"}}>{stats.co2Total} kg</div>
-          <div className="nutri-sub">≈ {co2Arboles} árboles/año para compensar</div>
-        </div>
-        <div className="nutri-card">
-          <div className="nutri-label">Frutas y verduras</div>
-          <div className="nutri-val" style={{color:"#10B981"}}>
-            {Math.round(((stats.catMap["Frutas"]?.gasto||0)+(stats.catMap["Verduras"]?.gasto||0))/stats.totalGastoAlim*100)}%
+      {(() => {
+        const fvPct = Math.round(((stats.catMap["Frutas"]?.gasto||0)+(stats.catMap["Verduras"]?.gasto||0))/stats.totalGastoAlim*100);
+        const protPct = Math.round(((stats.catMap["Carnes"]?.gasto||0)+(stats.catMap["Charcuteria"]?.gasto||0)+(stats.catMap["Pescado y Marisco"]?.gasto||0))/stats.totalGastoAlim*100);
+        const procPct = Math.round(((stats.catMap["Snacks y Dulces"]?.gasto||0)+(stats.catMap["Congelados"]?.gasto||0))/stats.totalGastoAlim*100);
+        const cards = [
+          { k:"co2", label:"Huella CO₂ estimada", val:`${stats.co2Total} kg`, sub:`≈ ${co2Arboles} árboles/año para compensar`, color:"#34D399",
+            tip: `CO₂ estimado según las categorías de tus compras. Media española en alimentación: ~1.500 kg/año. Para reducirlo: compra más frutas/verduras locales y reduce la carne roja, que genera ~4 kg CO₂ por € gastado.` },
+          { k:"fv", label:"Frutas y verduras", val:`${fvPct}%`, sub:"del gasto alimentario", color:"#10B981",
+            tip: `La OMS recomienda mínimo el 30% del gasto en frutas y verduras. Tú llevas un ${fvPct}% — ${fvPct>=30?"✅ por encima del objetivo. ¡Bien hecho!":"⚠️ por debajo del objetivo. Intenta añadir más fruta fresca y verdura de temporada."}` },
+          { k:"prot", label:"Proteína animal", val:`${protPct}%`, sub:"del gasto alimentario", color:"#F59E0B",
+            tip: `La OMS recomienda que la proteína animal no supere el 25% del gasto alimentario. Tú llevas un ${protPct}% — ${protPct<=25?"✅ dentro del rango recomendado.":"⚠️ por encima. Sustituye parte de la carne por pescado, legumbres o huevos."}` },
+          { k:"proc", label:"Procesados y dulces", val:`${procPct}%`, sub:"del gasto alimentario", color:"#EC4899",
+            tip: `Los ultraprocesados deberían ser menos del 10% del gasto alimentario. Tú llevas un ${procPct}% — ${procPct<=10?"✅ dentro del rango saludable.":"⚠️ por encima. Sustituye snacks por frutos secos o fruta fresca."}`},
+        ];
+        return (
+          <div className="nutri-grid">
+            {cards.map(c=>(
+              <div key={c.k} className={`nutri-card${activeCard===c.k?" expanded":""}`} onClick={()=>setActiveCard(v=>v===c.k?null:c.k)}>
+                <div className="nutri-label" style={{display:"flex",justifyContent:"space-between"}}>
+                  {c.label} <span style={{color:"#2D3748",fontSize:11}}>ⓘ</span>
+                </div>
+                <div className="nutri-val" style={{color:c.color}}>{c.val}</div>
+                <div className="nutri-sub">{c.sub}</div>
+                {activeCard===c.k && <div className="tip-panel">{c.tip}</div>}
+              </div>
+            ))}
           </div>
-          <div className="nutri-sub">del gasto alimentario</div>
-        </div>
-        <div className="nutri-card">
-          <div className="nutri-label">Proteína animal</div>
-          <div className="nutri-val" style={{color:"#F59E0B"}}>
-            {Math.round(((stats.catMap["Carnes"]?.gasto||0)+(stats.catMap["Charcuteria"]?.gasto||0)+(stats.catMap["Pescado y Marisco"]?.gasto||0))/stats.totalGastoAlim*100)}%
-          </div>
-          <div className="nutri-sub">del gasto alimentario</div>
-        </div>
-        <div className="nutri-card">
-          <div className="nutri-label">Procesados y dulces</div>
-          <div className="nutri-val" style={{color:"#EC4899"}}>
-            {Math.round(((stats.catMap["Snacks y Dulces"]?.gasto||0)+(stats.catMap["Congelados"]?.gasto||0))/stats.totalGastoAlim*100)}%
-          </div>
-          <div className="nutri-sub">del gasto alimentario</div>
-        </div>
-      </div>
+        );
+      })()}
 
-      <div className="sec-label">Distribución por grupo alimentario</div>
-      <div style={{background:"#111827",border:"1px solid #1E2A3A",borderRadius:12,padding:"14px 16px",marginBottom:20}}>
+      <div className="sec-label">Distribución por grupo alimentario <span style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#2D3748",textTransform:"none",letterSpacing:0}}>— toca para ver consejo</span></div>
+      <div style={{background:"#111827",border:"1px solid #1E2A3A",borderRadius:12,padding:"8px 10px",marginBottom:20}}>
         {Object.entries(stats.grupos).sort((a,b)=>b[1].gasto-a[1].gasto).map(([grupo,info])=>{
           const pct = Math.round(info.gasto/stats.totalGastoAlim*100);
+          const isOpen = activeGroup === grupo;
+          const starColor = info.puntos>=4?"#34D399":info.puntos>=3?"#FCD34D":"#F87171";
           return (
-            <div key={grupo} className="pie-row">
-              <div className="pie-dot" style={{background:info.color}}/>
-              <div className="pie-name">{grupo}</div>
-              <div className="pie-bar-wrap"><div className="pie-bar-fill" style={{width:`${pct}%`,background:info.color}}/></div>
-              <div className="pie-pct">{pct}%</div>
-              <div style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:info.puntos>=4?"#34D399":info.puntos>=3?"#FCD34D":"#F87171",minWidth:16,textAlign:"right"}}>
-                {"★".repeat(info.puntos||0)}
+            <div key={grupo} style={{borderBottom:"1px solid rgba(30,42,58,.4)",paddingBottom: isOpen?8:0}}>
+              <div className={`pie-row${isOpen?" expanded":""}`} style={{border:"none",borderRadius:6}} onClick={()=>setActiveGroup(v=>v===grupo?null:grupo)}>
+                <div className="pie-dot" style={{background:info.color}}/>
+                <div className="pie-name">{grupo}</div>
+                <div className="pie-bar-wrap"><div className="pie-bar-fill" style={{width:`${pct}%`,background:info.color}}/></div>
+                <div className="pie-pct">{pct}%</div>
+                <div style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:starColor,minWidth:60,textAlign:"right"}}>
+                  {"★".repeat(info.puntos||0)}{"☆".repeat(Math.max(0,5-(info.puntos||0)))}
+                </div>
+                <span style={{color:"#2D3748",fontSize:12,flexShrink:0}}>{isOpen?"▲":"▼"}</span>
               </div>
+              {isOpen && (
+                <div className="tip-panel" style={{marginLeft:20,marginRight:4}}>
+                  <div className="tip-score">{"★".repeat(info.puntos||0)} {info.puntos}/5 — {STAR_MEANING[info.puntos||1]}</div>
+                  {GROUP_TIPS[grupo] || "Sin consejo específico para este grupo."}
+                </div>
+              )}
             </div>
           );
         })}
