@@ -54,6 +54,19 @@ function categorizar(nombre) {
   return "Otros";
 }
 
+// ── Normalización de nombres de producto ──────────────────────────────────────
+function normalizeProductName(nombre) {
+  if (!nombre) return "";
+  return nombre
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/\b\d+[\.,]?\d*\s*(kg|g|gr|l|ml|cl|mg|ud|uds|un|pack|litros?|gramos?|unidades?)\b/gi, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ").trim()
+    .split(" ").filter(w => w.length > 1 && !["de","del","la","el","los","las","con","sin","por","para","y","e","o"].includes(w))
+    .slice(0, 3).join(" ");
+}
+
 async function reloadCustomCats() {
   try {
     const { data } = await supabase.from("custom_categories").select("*");
@@ -477,7 +490,7 @@ app.get("/api/stats/productos", async (req, res) => {
   const { data:prods } = await supabase.from("productos").select("*").in("ticket_id",ids);
   const map = {};
   (prods||[]).filter(p=>p.nombre?.trim()).forEach(p => {
-    const k=p.nombre.toLowerCase().trim().replace(/\s+/g," ");
+    const k=normalizeProductName(p.nombre)||p.nombre.toLowerCase().trim().replace(/\s+/g," ");
     if (!map[k]) map[k]={ nombre:p.nombre,categoria:p.categoria,frecuencia:new Set(),total_cantidad:0,total_gasto:0,precios:[] };
     map[k].frecuencia.add(p.ticket_id);
     map[k].total_cantidad += p.cantidad||0;
@@ -573,7 +586,7 @@ app.get("/api/lista-compra", async (req, res) => {
   const { data:prods } = await supabase.from("productos").select("nombre,categoria,precio_unitario,ticket_id");
   const map={};
   (prods||[]).filter(p=>p.nombre?.trim()).forEach(p => {
-    const k=p.nombre.toLowerCase().trim().replace(/\s+/g," ");
+    const k=normalizeProductName(p.nombre)||p.nombre.toLowerCase().trim().replace(/\s+/g," ");
     const fecha=ticketMap[p.ticket_id];
     if (!map[k]) map[k]={ nombre:p.nombre,categoria:p.categoria,tickets:new Set(),fechas:[],precios:[] };
     map[k].tickets.add(p.ticket_id);
@@ -601,6 +614,36 @@ app.get("/api/lista-compra", async (req, res) => {
       dias_desde:Math.round(diasDesde),intervalo_medio:Math.round(intervalMedio),
       urgencia:Math.round(urgencia*100)/100,precio_medio,veces:p.tickets.size,sugerencia_granel:granel };
   }).filter(p=>p&&p.urgencia>=0.6&&p.dias_desde<=180).sort((a,b)=>b.urgencia-a.urgencia);
+  res.json(result);
+});
+
+// ── Stats: inflación por categoría ───────────────────────────────────────────
+app.get("/api/stats/inflacion-categoria", async (req, res) => {
+  const { data:tickets } = await supabase.from("tickets").select("id,fecha_compra").is("deleted_at",null);
+  const { data:prods } = await supabase.from("productos").select("categoria,precio_unitario,ticket_id").gt("precio_unitario",0);
+  const ticketMap = {}; (tickets||[]).forEach(t => { ticketMap[t.id] = t.fecha_compra; });
+  const catMonthMap = {};
+  (prods||[]).forEach(p => {
+    const fecha = ticketMap[p.ticket_id];
+    if (!fecha || !p.categoria) return;
+    let mes;
+    if (fecha.includes("/")) { const [d,m,y]=fecha.split("/"); mes=`${m.padStart(2,"0")}/${y}`; }
+    else { const dt=new Date(fecha); if(isNaN(dt))return; mes=`${String(dt.getMonth()+1).padStart(2,"0")}/${dt.getFullYear()}`; }
+    if (!catMonthMap[p.categoria]) catMonthMap[p.categoria]={};
+    if (!catMonthMap[p.categoria][mes]) catMonthMap[p.categoria][mes]={sum:0,n:0};
+    catMonthMap[p.categoria][mes].sum += p.precio_unitario;
+    catMonthMap[p.categoria][mes].n++;
+  });
+  function mesToDate(m) { const [mm,yy]=m.split("/"); return new Date(parseInt(yy),parseInt(mm)-1); }
+  const result = Object.entries(catMonthMap).map(([cat,meses]) => {
+    const months = Object.entries(meses).map(([mes,v])=>({
+      mes, precio_medio:Math.round(v.sum/v.n*100)/100, n:v.n
+    })).sort((a,b)=>mesToDate(a.mes)-mesToDate(b.mes));
+    if (months.length < 2) return null;
+    const first=months[0].precio_medio, last=months[months.length-1].precio_medio;
+    const cambio_pct = first>0 ? Math.round(((last-first)/first)*1000)/10 : null;
+    return { categoria:cat, meses:months, cambio_pct, precio_actual:last, precio_inicial:first };
+  }).filter(Boolean).sort((a,b)=>Math.abs(b.cambio_pct||0)-Math.abs(a.cambio_pct||0));
   res.json(result);
 });
 

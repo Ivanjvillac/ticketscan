@@ -316,9 +316,12 @@ function ShortcutsOverlay({ onClose }) {
 }
 
 // ── Ticket content compartido ─────────────────────────────────────────────────
-function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX, extra, header, onTagAdd, onTagRemove }) {
+const TAG_PALETTE = ["#00B8FF","#00E5A0","#7C3AED","#F59E0B","#EF4444","#EC4899","#10B981","#6366F1"];
+
+function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX, extra, header, onTagAdd, onTagRemove, tagColors={}, onTagColorChange }) {
   const [prodSearch, setProdSearch] = useState("");
   const [newTag, setNewTag] = useState("");
+  const [colorPickerTag, setColorPickerTag] = useState(null);
 
   const productos = data.productos || [];
   const dups = detectDuplicates(productos);
@@ -403,9 +406,30 @@ function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX
         <>
           <div className="sec-label">Etiquetas</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:16}}>
-            {(data.tags||[]).map(tag => (
-              <span key={tag} className="tick-tag" onClick={()=>onTagRemove?.(tag)} title="Clic para eliminar">{tag} ×</span>
-            ))}
+            {(data.tags||[]).map(tag => {
+              const c = tagColors[tag]; const bg=c?`${c}22`:"rgba(0,184,255,.1)"; const fg=c||"#00B8FF"; const border=c?`${c}44`:"rgba(0,184,255,.2)";
+              return (
+                <span key={tag} style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
+                  <span className="tick-tag" style={{background:bg,color:fg,borderColor:border,gap:4}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:fg,flexShrink:0,cursor:"pointer",display:"inline-block"}}
+                      onClick={e=>{e.stopPropagation();setColorPickerTag(colorPickerTag===tag?null:tag);}}
+                      title="Cambiar color"/>
+                    {tag}
+                    <span style={{opacity:.55,cursor:"pointer"}} onClick={()=>onTagRemove?.(tag)}>×</span>
+                  </span>
+                  {colorPickerTag===tag && (
+                    <div style={{position:"absolute",bottom:"calc(100% + 5px)",left:0,zIndex:50,background:"#0D1220",border:"1px solid #1E2A3A",borderRadius:8,padding:6,display:"flex",gap:4,flexWrap:"wrap",width:94,boxShadow:"0 4px 16px rgba(0,0,0,.6)"}}>
+                      {TAG_PALETTE.map(pc=>(
+                        <div key={pc} onClick={e=>{e.stopPropagation();onTagColorChange?.(tag,pc);setColorPickerTag(null);}}
+                          style={{width:18,height:18,borderRadius:4,background:pc,cursor:"pointer",border:pc===fg?"2px solid #fff":"2px solid transparent",transition:"transform .1s"}}
+                          onMouseEnter={e=>e.currentTarget.style.transform="scale(1.2)"}
+                          onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}/>
+                      ))}
+                    </div>
+                  )}
+                </span>
+              );
+            })}
             <input className="tag-add-input" placeholder="+ Etiqueta" value={newTag}
               onChange={e=>setNewTag(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTag()}/>
             {newTag && <button className="btn btn-primary" style={{padding:"5px 12px",fontSize:12}} onClick={addTag}>Añadir</button>}
@@ -806,6 +830,35 @@ function DashboardView({ historial, onOpenTicket }) {
   const daysInMonth = new Date(thisYear,thisMonthNum+1,0).getDate();
   const forecastPace = now.getDate()>0&&thisMonthSpend>0 ? Math.round((thisMonthSpend/now.getDate())*daysInMonth*100)/100 : 0;
 
+  // Heatmap: build spend map by date
+  const spendMap = useMemo(() => {
+    const map = {};
+    historial.forEach(t => {
+      const d = parseTicketDate(t.fecha_compra); if (!d) return;
+      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      map[k] = (map[k]||0) + (t.total||0);
+    });
+    return map;
+  }, [historial]);
+
+  const heatmapWeeks = useMemo(() => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const start = new Date(today); start.setDate(today.getDate() - 363);
+    const weeks = [];
+    for (let w = 0; w < 52; w++) {
+      const week = [];
+      for (let d = 0; d < 7; d++) {
+        const date = new Date(start); date.setDate(start.getDate() + w*7 + d);
+        const k = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+        week.push({ k, spend: spendMap[k]||0 });
+      }
+      weeks.push(week);
+    }
+    return weeks;
+  }, [spendMap]);
+  const maxDaySpend = Math.max(...Object.values(spendMap), 0.01);
+  const getCellColor = s => !s?"rgba(30,42,58,.4)":`rgba(0,229,160,${0.12+Math.min(s/maxDaySpend,1)*0.88})`;
+
   // Family
   const famMap = {};
   historial.forEach(t=>{ if(!t.subido_por)return; if(!famMap[t.subido_por])famMap[t.subido_por]={total:0,count:0}; famMap[t.subido_por].total+=t.total||0; famMap[t.subido_por].count++; });
@@ -850,6 +903,30 @@ function DashboardView({ historial, onOpenTicket }) {
         </div>
       </>)}
 
+      <div className="sec-label">Actividad de compra (52 semanas)</div>
+      <div style={{overflowX:"auto",marginBottom:22,paddingBottom:4}}>
+        <div style={{display:"flex",gap:2,minWidth:"max-content"}}>
+          {heatmapWeeks.map((week,wi)=>(
+            <div key={wi} style={{display:"flex",flexDirection:"column",gap:2}}>
+              {week.map((day,di)=>(
+                <div key={di} title={day.spend?`${day.k}: ${fmt(day.spend)}`:day.k}
+                  onClick={()=>{
+                    if(!day.spend)return;
+                    const t=historial.find(t=>{const d=parseTicketDate(t.fecha_compra);return d&&`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`===day.k;});
+                    if(t)onOpenTicket(t);
+                  }}
+                  style={{width:12,height:12,borderRadius:2,background:getCellColor(day.spend),cursor:day.spend?"pointer":"default"}}/>
+              ))}
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:4,marginTop:5}}>
+          <span style={{fontFamily:"'Space Mono',monospace",fontSize:8,color:"#2D3748"}}>Menos</span>
+          {[0,.25,.5,.75,1].map((v,i)=><div key={i} style={{width:10,height:10,borderRadius:2,background:v===0?"rgba(30,42,58,.4)":`rgba(0,229,160,${0.12+v*0.88})`}}/>)}
+          <span style={{fontFamily:"'Space Mono',monospace",fontSize:8,color:"#2D3748"}}>Más</span>
+        </div>
+      </div>
+
       <div className="sec-label">Resumen</div>
       <div className="dash-grid">
         <div className="dash-card"><div className="dash-label">Total gastado</div><div className="dash-val" style={{color:"#00E5A0"}}>{fmt(totalGastado)}</div><div className="dash-sub">{historial.length} tickets</div></div>
@@ -884,7 +961,7 @@ function DashboardView({ historial, onOpenTicket }) {
 }
 
 // ── Ticket Detail ─────────────────────────────────────────────────────────────
-function TicketDetail({ ticket, onBack, onRefresh, navList = [], onNavigate }) {
+function TicketDetail({ ticket, onBack, onRefresh, navList = [], onNavigate, tagColors={}, onTagColorChange }) {
   const [showEdit, setShowEdit] = useState(false);
   const [data, setData] = useState(ticket);
   const [shareToast, setShareToast] = useState(false);
@@ -1016,7 +1093,7 @@ function TicketDetail({ ticket, onBack, onRefresh, navList = [], onNavigate }) {
       )}
       <TicketContent data={merged} ticketId={ticket.id} header={header}
         onExportJSON={exportJSON} onExportCSV={exportCSV} onExportXLSX={exportXLSX}
-        onTagAdd={refresh} onTagRemove={removeTag}/>
+        onTagAdd={refresh} onTagRemove={removeTag} tagColors={tagColors} onTagColorChange={onTagColorChange}/>
       {navList.length > 1 && (
         <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4,fontFamily:"'Space Mono',monospace",fontSize:9,color:"#2D3748",borderTop:"1px solid rgba(30,42,58,.4)"}}>
           <span style={{cursor:prevNav?"pointer":"default",color:prevNav?"#4A5568":"#1E2A3A"}} onClick={()=>prevNav&&onNavigate?.(prevNav)}>
@@ -1035,7 +1112,42 @@ function TicketDetail({ ticket, onBack, onRefresh, navList = [], onNavigate }) {
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
-function Settings({ historial, theme, onThemeToggle }) {
+function generateMonthlyReport(historial) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const MESES_ES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const tickets = historial.filter(t => {
+    const d = parseTicketDate(t.fecha_compra);
+    return d && d.getFullYear()===y && d.getMonth()===m;
+  });
+  const total = tickets.reduce((s,t)=>s+(t.total||0),0);
+  const storeMap = {};
+  tickets.forEach(t=>{ const k=t.tienda||"Desconocida"; if(!storeMap[k])storeMap[k]={n:0,total:0}; storeMap[k].n++; storeMap[k].total+=t.total||0; });
+  const stores = Object.entries(storeMap).sort((a,b)=>b[1].total-a[1].total);
+  const fmtE = v => v!=null?parseFloat(v).toFixed(2)+"€":"—";
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Informe ${MESES_ES[m]} ${y}</title>
+  <style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#111}h1{color:#059669;border-bottom:2px solid #059669;padding-bottom:8px}h2{color:#374151;font-size:14px;text-transform:uppercase;letter-spacing:1px;margin-top:28px}table{width:100%;border-collapse:collapse;margin:12px 0}th{background:#f3f4f6;padding:8px 12px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.5px}td{padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:13px}.total-row td{font-weight:700;color:#059669;border-top:2px solid #059669}.badge{display:inline-block;background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:11px;font-family:monospace}@media print{body{margin:20px}}</style>
+  </head><body>
+  <h1>📊 Informe de gasto — ${MESES_ES[m]} ${y}</h1>
+  <p style="color:#6b7280;font-size:13px">Generado el ${now.toLocaleDateString("es-ES")} · TicketScan</p>
+  <h2>Resumen</h2>
+  <table><tr><th>Total gastado</th><th>Tickets</th><th>Ticket medio</th></tr>
+  <tr><td class="badge">${fmtE(total)}</td><td>${tickets.length}</td><td>${tickets.length?fmtE(total/tickets.length):"—"}</td></tr></table>
+  <h2>Por tienda</h2>
+  <table><tr><th>Tienda</th><th>Visitas</th><th>Total</th><th>Medio</th></tr>
+  ${stores.map(([s,v])=>`<tr><td><b>${s}</b></td><td>${v.n}</td><td>${fmtE(v.total)}</td><td>${fmtE(v.total/v.n)}</td></tr>`).join("")}
+  <tr class="total-row"><td>TOTAL</td><td>${tickets.length}</td><td>${fmtE(total)}</td><td></td></tr></table>
+  <h2>Tickets del mes</h2>
+  <table><tr><th>#</th><th>Tienda</th><th>Fecha</th><th>Total</th></tr>
+  ${tickets.map(t=>`<tr><td>#${t.id}</td><td>${t.tienda||"—"}</td><td>${t.fecha_compra||"—"}</td><td>${fmtE(t.total)}</td></tr>`).join("")}
+  </table></body></html>`;
+  const win = window.open("","_blank");
+  if (!win) { alert("Permite ventanas emergentes para generar el informe."); return; }
+  win.document.write(html); win.document.close();
+  setTimeout(()=>win.print(), 400);
+}
+
+function Settings({ historial, theme, onThemeToggle, pwaPrompt }) {
   const [importing, setImporting] = useState(false);
   const [msg, setMsg] = useState(null);
   const [ivaReport, setIvaReport] = useState(null);
@@ -1116,6 +1228,16 @@ function Settings({ historial, theme, onThemeToggle }) {
             {theme==="light" ? "🌙 Modo oscuro" : "☀️ Modo claro"}
           </button>
         </div>
+        {pwaPrompt && (
+          <div className="settings-row">
+            <div><div className="settings-lbl">Instalar app</div><div className="settings-desc">Añade TicketScan a la pantalla de inicio</div></div>
+            <button className="btn btn-primary" style={{fontSize:12,padding:"7px 14px"}} onClick={async()=>{
+              pwaPrompt.prompt();
+              const {outcome}=await pwaPrompt.userChoice;
+              if(outcome==="accepted") alert("✅ App instalada correctamente");
+            }}>📲 Instalar</button>
+          </div>
+        )}
       </div>
 
       <div className="settings-section">
@@ -1151,8 +1273,8 @@ function Settings({ historial, theme, onThemeToggle }) {
           <button className="btn btn-ghost" style={{fontSize:12,padding:"7px 14px"}} onClick={copyForSheets}>📋 Copiar TSV</button>
         </div>
         <div className="settings-row">
-          <div><div className="settings-lbl">Informe mensual</div><div className="settings-desc">Vista optimizada para imprimir / guardar PDF</div></div>
-          <button className="btn btn-ghost" style={{fontSize:12,padding:"7px 14px"}} onClick={()=>window.print()}>🖨️ Imprimir</button>
+          <div><div className="settings-lbl">Informe mensual PDF</div><div className="settings-desc">Resumen del mes actual — guardar/imprimir como PDF</div></div>
+          <button className="btn btn-ghost" style={{fontSize:12,padding:"7px 14px"}} onClick={()=>generateMonthlyReport(historial)}>📄 Generar PDF</button>
         </div>
       </div>
 
@@ -1251,6 +1373,10 @@ export default function App() {
   const [bulkTag, setBulkTag] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("ts_theme")||"dark");
+  const [tagColors, setTagColors] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ts_tag_colors")||"{}"); } catch { return {}; }
+  });
+  const [pwaPrompt, setPwaPrompt] = useState(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const searchRef = useRef();
   const searchDebounce = useRef();
@@ -1267,6 +1393,21 @@ export default function App() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(t => t==="dark"?"light":"dark");
+
+  // PWA install prompt
+  useEffect(() => {
+    const handler = e => { e.preventDefault(); setPwaPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const saveTagColor = useCallback((tag, color) => {
+    setTagColors(prev => {
+      const next = {...prev, [tag]: color};
+      localStorage.setItem("ts_tag_colors", JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1495,9 +1636,12 @@ export default function App() {
         {allTags.length>0 && (
           <div className="tag-filter">
             <span className={`tag-chip ${!tagFilter?"active":""}`} onClick={()=>setTagFilter(null)}>Todos</span>
-            {allTags.map(tag=>(
-              <span key={tag} className={`tag-chip ${tagFilter===tag?"active":""}`} onClick={()=>setTagFilter(tagFilter===tag?null:tag)}>{tag}</span>
-            ))}
+            {allTags.map(tag=>{
+              const c=tagColors[tag]; const isA=tagFilter===tag;
+              return <span key={tag} className={`tag-chip ${isA?"active":""}`}
+                style={c&&isA?{borderColor:`${c}55`,color:c,background:`${c}11`}:c?{borderColor:`${c}33`,color:`${c}cc`}:{}}
+                onClick={()=>setTagFilter(tagFilter===tag?null:tag)}>{tag}</span>;
+            })}
           </div>
         )}
 
@@ -1550,7 +1694,9 @@ export default function App() {
                 {t.total!=null && <span className="hist-total">{fmt(t.total)}</span>}
               </div>
               {t.matching?.length>0 && <div className="hist-match">🛒 {t.matching.map(m=>m.nombre).slice(0,3).join(", ")}</div>}
-              {t.tags?.length>0 && <div className="hist-tags">{t.tags.map(tag=><span key={tag} className="hist-tag">{tag}</span>)}</div>}
+              {t.tags?.length>0 && <div className="hist-tags">{t.tags.map(tag=>{
+                const c=tagColors[tag]; return <span key={tag} className="hist-tag" style={c?{background:`${c}22`,color:c,borderColor:`${c}44`}:{}}>{tag}</span>;
+              })}</div>}
               {t.subido_por && <div style={{fontFamily:"'Space Mono',monospace",fontSize:8,color:"#6B7280",marginTop:3}}>👤 {t.subido_por}</div>}
             </div>
           ))}
@@ -1603,7 +1749,7 @@ export default function App() {
           )}
 
           {view==="detail"&&selected
-            ? <TicketDetail key={selected.id} ticket={selected} onBack={()=>{setView("dash");setSelected(null);}} onRefresh={()=>{loadHistorial();loadTags();}} navList={displayedTickets} onNavigate={openDetail}/>
+            ? <TicketDetail key={selected.id} ticket={selected} onBack={()=>{setView("dash");setSelected(null);}} onRefresh={()=>{loadHistorial();loadTags();}} navList={displayedTickets} onNavigate={openDetail} tagColors={tagColors} onTagColorChange={saveTagColor}/>
             : view==="scan" ? <ScanPanel onSaved={loadHistorial} historial={historial} currentUser={currentUser}/>
             : view==="analytics" ? <Analytics historial={historial}/>
             : view==="advanced" ? <AdvancedAnalysis historial={historial}/>
@@ -1612,7 +1758,7 @@ export default function App() {
             : view==="compare" ? <Compare historial={historial}/>
             : view==="alerts" ? <PriceAlerts/>
             : view==="trash" ? <Trash onRestored={loadHistorial}/>
-            : view==="settings" ? <Settings historial={historial} theme={theme} onThemeToggle={toggleTheme}/>
+            : view==="settings" ? <Settings historial={historial} theme={theme} onThemeToggle={toggleTheme} pwaPrompt={pwaPrompt}/>
             : <DashboardView historial={historial} onOpenTicket={openDetail}/>
           }
         </div>

@@ -240,6 +240,27 @@ function TiempoTab({ historial }) {
 // ── TIENDAS ──────────────────────────────────────────────────────────────────
 function TiendasTab({ historial }) {
   const [sort, setSort] = useState("gasto");
+  const [comparar, setComparar] = useState([]);
+  const [comparLoading, setComparLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API}/stats/comparar-tiendas`).then(r=>r.json())
+      .then(d=>setComparar(Array.isArray(d)?d:[])).catch(()=>setComparar([]))
+      .finally(()=>setComparLoading(false));
+  }, []);
+
+  // Aggregate store ranking from canasta
+  const storeRanking = useMemo(() => {
+    const map = {};
+    comparar.forEach(prod => {
+      prod.tiendas.forEach(t => {
+        if (!map[t.tienda]) map[t.tienda] = { tienda:t.tienda, wins:0, total_products:0, total_ahorro:0 };
+        map[t.tienda].total_products++;
+        if (t.tienda === prod.mas_barato) { map[t.tienda].wins++; map[t.tienda].total_ahorro += prod.ahorro_max; }
+      });
+    });
+    return Object.values(map).filter(s=>s.total_products>=2).sort((a,b)=>b.wins-a.wins);
+  }, [comparar]);
 
   const stores = useMemo(() => {
     const map = {};
@@ -300,6 +321,33 @@ function TiendasTab({ historial }) {
           </div>
         );
       })}
+
+      {storeRanking.length > 0 && (<>
+        <div className="sec-label" style={{marginTop:22}}>Ranking por precio de canasta</div>
+        <div style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#4A5568",marginBottom:12}}>
+          De {comparar.length} productos comprados en varias tiendas:
+        </div>
+        <div className="detail-list">
+          {storeRanking.map((s,i) => (
+            <div key={s.tienda} className="detail-row">
+              <div>
+                <div style={{fontWeight:700,fontSize:13}}>
+                  {i===0?"🥇":i===1?"🥈":i===2?"🥉":"  "} {s.tienda}
+                </div>
+                <div style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#4A5568",marginTop:2}}>
+                  Más barato en {s.wins}/{s.total_products} productos comparados
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontFamily:"'Space Mono',monospace",fontWeight:700,fontSize:13,color:i===0?"#00E5A0":"#E8EDF5"}}>
+                  {Math.round(s.wins/s.total_products*100)}%
+                </div>
+                {s.total_ahorro>0&&<div style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#34D399"}}>ahorra ~{fmt(s.total_ahorro)}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </>)}
     </div>
   );
 }
@@ -725,11 +773,16 @@ function PatronesTab({ historial }) {
 function InflacionTab({ historial }) {
   const [precios, setPrecios] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [inflCat, setInflCat] = useState([]);
+  const [inflCatLoading, setInflCatLoading] = useState(true);
 
   useEffect(() => {
     fetch(`${API}/stats/precios`).then(r=>r.json())
       .then(d=>setPrecios(Array.isArray(d)?d:[])).catch(()=>setPrecios([]))
       .finally(()=>setLoading(false));
+    fetch(`${API}/stats/inflacion-categoria`).then(r=>r.json())
+      .then(d=>setInflCat(Array.isArray(d)?d:[])).catch(()=>setInflCat([]))
+      .finally(()=>setInflCatLoading(false));
   }, []);
 
   // Regresión lineal sobre gasto mensual
@@ -868,6 +921,36 @@ function InflacionTab({ historial }) {
             })}
           </div>
         </>
+      )}
+
+      <div className="sec-label">Inflación por categoría</div>
+      {inflCatLoading ? (
+        <div style={{textAlign:"center",padding:20,color:"#4A5568",fontFamily:"'Space Mono',monospace",fontSize:11}}><span className="spin-sm" style={{marginRight:8}}/>Calculando…</div>
+      ) : inflCat.length === 0 ? (
+        <div className="insight"><div className="insight-lbl">Sin datos</div><div className="insight-txt" style={{fontSize:12}}>Necesitas productos con precio unitario registrado en al menos 2 meses distintos.</div></div>
+      ) : (
+        <div className="detail-list">
+          {inflCat.map(cat => {
+            const pct = cat.cambio_pct;
+            const color = pct>5?"#F87171":pct>0?"#FCD34D":pct<-5?"#34D399":pct<0?"#6EE7B7":"#4A5568";
+            const icon = pct>5?"🔺":pct>0?"⬆️":pct<-5?"🔻":pct<0?"⬇️":"➡️";
+            const data = cat.meses.map(m=>m.precio_medio);
+            return (
+              <div key={cat.categoria} className="detail-row" style={{gap:8,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:100}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{CAT_ICONS[cat.categoria]||"📦"} {cat.categoria}</div>
+                  <div style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#4A5568",marginTop:2}}>
+                    {fmt(cat.precio_inicial)} → {fmt(cat.precio_actual)} (P.Unit. medio)
+                  </div>
+                </div>
+                <Sparkline data={data} width={60} height={24}/>
+                <div style={{fontFamily:"'Space Mono',monospace",fontWeight:700,fontSize:15,color,flexShrink:0,minWidth:60,textAlign:"right"}}>
+                  {icon} {pct!=null?(pct>0?`+${pct}`:pct)+"%":"—"}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

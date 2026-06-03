@@ -53,6 +53,31 @@ const css = `
 @keyframes spin{to{transform:rotate(360deg)}}
 `;
 
+const CAT_ORDER = ["Frutas","Verduras","Carnes","Pescado y Marisco","Lacteos y Huevos","Pan y Bolleria","Bebidas","Pasta Arroz Legumbre","Conservas","Charcuteria","Congelados","Snacks y Dulces","Aceites y Condimentos","Limpieza Hogar","Higiene Personal","Mascotas","Bebe e Infantil","Otros"];
+
+function SlItem({ p, checked, onToggle, badge, barPct, barColor }) {
+  const isChecked = checked.has(p.nombre);
+  return (
+    <div className={`sl-item ${isChecked?"checked":""}`} onClick={()=>onToggle(p.nombre)}>
+      <div className={`sl-check ${isChecked?"done":""}`}>{isChecked?"✓":""}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div className="sl-name" style={{textDecoration:isChecked?"line-through":"none"}}>
+          {CAT_ICONS[p.categoria]||"📦"} {p.nombre}
+        </div>
+        <div className="sl-meta">
+          Última vez: {p.ultima_compra||"—"} · hace {p.dias_desde}d · cada ~{p.intervalo_medio}d
+          {p.sugerencia_granel&&!isChecked&&<span style={{marginLeft:6,color:"#FCD34D",fontSize:9}}>💡</span>}
+        </div>
+      </div>
+      <div className="urgencia-bar">
+        <div className="urgencia-fill" style={{width:`${barPct}%`,background:barColor}}/>
+      </div>
+      {p.precio_medio && <span className="sl-precio">~{fmt(p.precio_medio)}</span>}
+      <span className={`sl-urgencia-badge ${badge.cls}`}>{badge.txt}</span>
+    </div>
+  );
+}
+
 export default function ShoppingList() {
   const [items, setItems] = useState([]);
   const [checked, setChecked] = useState(new Set());
@@ -62,6 +87,8 @@ export default function ShoppingList() {
   const [showAdd, setShowAdd] = useState(false);
   const [manualItem, setManualItem] = useState("");
   const [manualItems, setManualItems] = useState([]);
+  const [groupByCat, setGroupByCat] = useState(false);
+  const [shareToast, setShareToast] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/lista-compra`).then(r=>r.json())
@@ -104,6 +131,25 @@ export default function ShoppingList() {
   const checkedCount = checked.size;
   const totalCount = filtered.length + manualItems.length;
 
+  // Estimated total of unchecked items
+  const estimatedTotal = [...filtered, ...manualItems.filter(m=>!checked.has("__m"+manualItems.indexOf(m)))]
+    .filter(p => p.precio_medio && !checked.has(p.nombre))
+    .reduce((s,p) => s + (p.precio_medio||0), 0);
+
+  // Group by category
+  const groupedFiltered = groupByCat ? CAT_ORDER.map(cat => ({
+    cat, items: filtered.filter(p => (p.categoria||"Otros") === cat)
+  })).filter(g => g.items.length > 0) : null;
+
+  const shareList = () => {
+    const allItems = [
+      ...manualItems.map(m => `☐ ${m.nombre}`),
+      ...filtered.map(p => `${checked.has(p.nombre)?"☑":"☐"} ${CAT_ICONS[p.categoria]||"📦"} ${p.nombre}${p.precio_medio?` (~${p.precio_medio.toFixed(2)}€)`:""} — cada ${p.intervalo_medio}d`)
+    ];
+    const text = `🛒 Lista de la compra\n${new Date().toLocaleDateString("es-ES")}\n\n${allItems.join("\n")}${estimatedTotal>0?`\n\nTotal estimado: ~${estimatedTotal.toFixed(2)}€`:""}`;
+    navigator.clipboard.writeText(text).then(() => { setShareToast(true); setTimeout(()=>setShareToast(false),2500); }).catch(()=>{});
+  };
+
   if (loading) return (
     <div style={{textAlign:"center",padding:40,color:"#4A5568",fontFamily:"'Space Mono',monospace",fontSize:12}}>
       <span className="spin-sm" style={{marginRight:8}}/>Calculando lista…
@@ -122,6 +168,8 @@ export default function ShoppingList() {
         <button className={`tog-btn ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>Todos</button>
         <button className={`tog-btn ${filter==="urgent"?"active":""}`} onClick={()=>setFilter("urgent")}>🔴 Urgente</button>
         <button className={`tog-btn ${filter==="soon"?"active":""}`} onClick={()=>setFilter("soon")}>🟡 Pronto</button>
+        <button className={`tog-btn ${groupByCat?"active":""}`} onClick={()=>setGroupByCat(v=>!v)}>📂 Cats</button>
+        <button onClick={shareList} title="Compartir lista" style={{padding:"5px 10px",borderRadius:6,border:"1px solid #1E2A3A",background:"#111827",color:"#4A5568",cursor:"pointer",fontSize:14,transition:"all .15s"}} onMouseEnter={e=>e.currentTarget.style.color="#00E5A0"} onMouseLeave={e=>e.currentTarget.style.color="#4A5568"}>📤</button>
         <button className="sl-add-btn" onClick={()=>setShowAdd(v=>!v)}>+ Añadir</button>
       </div>
 
@@ -134,6 +182,12 @@ export default function ShoppingList() {
             <button className="sl-add-btn" style={{fontSize:12,padding:"7px 14px"}} onClick={addManual}>Añadir</button>
             <button onClick={()=>setShowAdd(false)} style={{background:"none",border:"1px solid #1E2A3A",borderRadius:8,padding:"7px 14px",color:"#6B7280",fontFamily:"'Space Mono',monospace",fontSize:11,cursor:"pointer"}}>Cancelar</button>
           </div>
+        </div>
+      )}
+
+      {shareToast && (
+        <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:"#00E5A0",color:"#0A0E1A",padding:"10px 22px",borderRadius:30,fontFamily:"'Space Mono',monospace",fontSize:12,fontWeight:700,zIndex:200,animation:"fadeUp .25s ease",whiteSpace:"nowrap"}}>
+          📤 Lista copiada al portapapeles
         </div>
       )}
 
@@ -157,32 +211,20 @@ export default function ShoppingList() {
             </div>
           ))}
 
-          {filtered.map(p => {
-            const badge = getUrgenciaBadge(p.urgencia);
-            const barPct = Math.min(p.urgencia * 100, 100);
-            const isChecked = checked.has(p.nombre);
-            return (
-              <div key={p.nombre} className={`sl-item ${isChecked?"checked":""}`} onClick={()=>toggleCheck(p.nombre)}>
-                <div className={`sl-check ${isChecked?"done":""}`}>{isChecked?"✓":""}</div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div className="sl-name" style={{textDecoration:isChecked?"line-through":"none"}}>
-                    {CAT_ICONS[p.categoria]||"📦"} {p.nombre}
-                  </div>
-                  <div className="sl-meta">
-                    Última vez: {p.ultima_compra||"—"} · hace {p.dias_desde}d · cada ~{p.intervalo_medio}d
-                  </div>
-                </div>
-                <div className="urgencia-bar">
-                  <div className="urgencia-fill" style={{width:`${barPct}%`,background:getBarColor(p.urgencia)}}/>
-                </div>
-                {p.precio_medio && <span className="sl-precio">~{fmt(p.precio_medio)}</span>}
-                <span className={`sl-urgencia-badge ${badge.cls}`}>{badge.txt}</span>
+          {groupedFiltered ? groupedFiltered.map(({cat, items:catItems}) => (
+            <div key={cat}>
+              <div style={{padding:"8px 16px",background:"rgba(0,229,160,.04)",borderBottom:"1px solid rgba(0,229,160,.08)",borderTop:"1px solid rgba(30,42,58,.5)",fontFamily:"'Space Mono',monospace",fontSize:9,color:"#00E5A0",textTransform:"uppercase",letterSpacing:2,display:"flex",alignItems:"center",gap:6}}>
+                {CAT_ICONS[cat]||"📦"} {cat}
+                <span style={{color:"#2D3748",fontWeight:400}}>({catItems.length})</span>
               </div>
-            );
-          })}
+              {catItems.map(p => <SlItem key={p.nombre} p={p} checked={checked} onToggle={toggleCheck} badge={getUrgenciaBadge(p.urgencia)} barPct={Math.min(p.urgencia*100,100)} barColor={getBarColor(p.urgencia)}/>)}
+            </div>
+          )) : filtered.map(p => (
+            <SlItem key={p.nombre} p={p} checked={checked} onToggle={toggleCheck} badge={getUrgenciaBadge(p.urgencia)} barPct={Math.min(p.urgencia*100,100)} barColor={getBarColor(p.urgencia)}/>
+          ))}
 
           <div className="sl-footer">
-            <span>{checkedCount} / {totalCount} marcados</span>
+            <span>{checkedCount} / {totalCount} marcados{estimatedTotal>0?<span style={{marginLeft:8,color:"#00E5A0"}}>~{estimatedTotal.toFixed(2)}€</span>:null}</span>
             {checkedCount > 0 && (
               <button onClick={()=>setChecked(new Set())}
                 style={{background:"none",border:"none",color:"#00E5A0",cursor:"pointer",fontFamily:"'Space Mono',monospace",fontSize:11}}>
