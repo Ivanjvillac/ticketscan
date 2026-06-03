@@ -190,7 +190,8 @@ export default function EditModal({ ticket, onClose, onSaved }) {
           </span>
         </div>
 
-        <table className="prod-table">
+        <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <table className="prod-table" style={{minWidth:560,marginBottom:0}}>
           <thead>
             <tr><th>Producto</th><th>Uds</th><th>P.Unit €</th><th>Total €</th><th>Categoría</th><th>Notas</th><th></th></tr>
           </thead>
@@ -215,6 +216,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
             ))}
           </tbody>
         </table>
+        </div>
 
         <div className="add-prod-row">
           <input className="add-prod-inp" placeholder="Nombre producto…" value={newProd.nombre} onChange={e=>setNewProd(p=>({...p,nombre:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addProd()}/>

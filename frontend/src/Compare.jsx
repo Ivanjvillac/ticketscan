@@ -226,7 +226,8 @@ function ComparadorTickets({ historial }) {
               </div>
 
               <div className="sec-label">Diferencias de precio</div>
-              <table className="diff-table">
+              <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+              <table className="diff-table" style={{minWidth:340,marginBottom:0}}>
                 <thead><tr><th>Producto</th><th>Ticket A</th><th>Ticket B</th><th>Diferencia</th></tr></thead>
                 <tbody>
                   {diff.map((row,i)=>(
@@ -251,6 +252,7 @@ function ComparadorTickets({ historial }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             </>
           )}
         </>

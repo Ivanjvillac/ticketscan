@@ -363,7 +363,8 @@ function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX
               <input className="prod-search" placeholder="Buscar producto…" value={prodSearch} onChange={e=>setProdSearch(e.target.value)}/>
             </div>
           )}
-          <table className="items-table">
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:0}}>
+          <table className="items-table" style={{marginBottom:0}}>
             <thead><tr><th>Producto</th><th>Uds</th><th>P. Unit</th><th>Total</th></tr></thead>
             <tbody>
               {filtered.map((p,i) => (
@@ -379,6 +380,7 @@ function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX
               ))}
             </tbody>
           </table>
+          </div>
         </>
       )}
 
