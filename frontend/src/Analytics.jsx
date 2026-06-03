@@ -956,6 +956,55 @@ function InflacionTab({ historial }) {
   );
 }
 
+// ── SUSCRIPCIONES ─────────────────────────────────────────────────────────────
+function SuscripcionesTab() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${API}/stats/suscripciones`).then(r=>r.json()).then(d=>setItems(Array.isArray(d)?d:[])).catch(()=>setItems([])).finally(()=>setLoading(false));
+  }, []);
+  if (loading) return <div style={{textAlign:"center",padding:40,color:"#4A5568",fontFamily:"'Space Mono',monospace",fontSize:12}}><span className="spin-sm" style={{marginRight:8}}/>Detectando patrones…</div>;
+  if (!items.length) return (
+    <div className="an-empty">
+      <div style={{fontSize:40,marginBottom:12}}>🔁</div>
+      Sin suscripciones detectadas.<br/>
+      <span style={{fontSize:11}}>Necesitas el mismo importe en la misma tienda 3+ veces con ~30 días entre compras.</span>
+    </div>
+  );
+  return (
+    <div>
+      <div className="insight" style={{marginBottom:16}}>
+        <div className="insight-lbl">¿Qué detectamos?</div>
+        <div className="insight-txt" style={{fontSize:12}}>Tickets con el mismo importe (±8%) en la misma tienda, repetidos con intervalos de 18-50 días. Pueden ser suscripciones, cuotas o compras periódicas.</div>
+      </div>
+      <div className="detail-list">
+        {items.map((s,i) => (
+          <div key={i} className="detail-row" style={{flexDirection:"column",alignItems:"flex-start",gap:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",width:"100%",alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:14}}>🔁 {s.tienda}</div>
+                <div style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#4A5568",marginTop:2}}>
+                  Cada ~{s.intervalo_dias} días · {s.apariciones} veces · desde {s.primera}
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontFamily:"'Space Mono',monospace",fontWeight:700,fontSize:16,color:"#00E5A0"}}>{fmt(s.importe_medio)}</div>
+                <div style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#4A5568"}}>~{fmt(s.importe_medio*12)}/año</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {s.tickets.slice(0,4).map(t=>(
+                <span key={t.id} style={{fontFamily:"'Space Mono',monospace",fontSize:9,background:"rgba(0,184,255,.08)",border:"1px solid rgba(0,184,255,.15)",borderRadius:6,padding:"2px 7px",color:"#6B7280"}}>#{t.id} · {t.fecha} · {fmt(t.total)}</span>
+              ))}
+              {s.tickets.length>4&&<span style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#2D3748"}}>+{s.tickets.length-4} más</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Export ────────────────────────────────────────────────────────────────────
 export default function Analytics({ historial }) {
   const [tab, setTab] = useState("tiempo");
@@ -973,17 +1022,19 @@ export default function Analytics({ historial }) {
           <div className="an-tabs">
             {[["tiempo","⏱ Tiempo"],["tiendas","🏪 Tiendas"],["productos","🛒 Productos"],
               ["precios","💰 Precios"],["categorias","🏷️ Categorías"],
-              ["inflacion","📉 Inflación"],["patrones","📈 Patrones"]].map(([v,l])=>(
+              ["inflacion","📉 Inflación"],["patrones","📈 Patrones"],
+              ["suscripciones","🔁 Suscripciones"]].map(([v,l])=>(
               <button key={v} className={`an-tab ${tab===v?"active":""}`} onClick={()=>setTab(v)}>{l}</button>
             ))}
           </div>
-          {tab==="tiempo"     && <TiempoTab historial={historial}/>}
-          {tab==="tiendas"    && <TiendasTab historial={historial}/>}
-          {tab==="productos"  && <ProductosTab/>}
-          {tab==="precios"    && <PreciosTab/>}
-          {tab==="categorias" && <CategoriasTab/>}
-          {tab==="inflacion"  && <InflacionTab historial={historial}/>}
-          {tab==="patrones"   && <PatronesTab historial={historial}/>}
+          {tab==="tiempo"          && <TiempoTab historial={historial}/>}
+          {tab==="tiendas"         && <TiendasTab historial={historial}/>}
+          {tab==="productos"       && <ProductosTab/>}
+          {tab==="precios"         && <PreciosTab/>}
+          {tab==="categorias"      && <CategoriasTab/>}
+          {tab==="inflacion"       && <InflacionTab historial={historial}/>}
+          {tab==="patrones"        && <PatronesTab historial={historial}/>}
+          {tab==="suscripciones"   && <SuscripcionesTab/>}
         </>
       )}
     </div>

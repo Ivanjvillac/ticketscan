@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import Analytics from "./Analytics";
 import Budget from "./Budget";
+import Chat from "./Chat";
 import ShoppingList from "./ShoppingList";
 import EditModal from "./EditModal";
 import Compare from "./Compare";
@@ -367,7 +368,10 @@ function TicketContent({ data, ticketId, onExportJSON, onExportCSV, onExportXLSX
             <tbody>
               {filtered.map((p,i) => (
                 <tr key={i}>
-                  <td className="i-name" style={dups.includes(p.nombre?.toLowerCase().trim())?{color:"#FCD34D"}:{}}>{p.nombre}</td>
+                  <td className="i-name" style={dups.includes(p.nombre?.toLowerCase().trim())?{color:"#FCD34D"}:{}}>
+                    {p.nombre}
+                    {p.notas&&<div style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#4A5568",marginTop:2}}>💬 {p.notas}</div>}
+                  </td>
                   <td className="i-qty">×{p.cantidad}</td>
                   <td className="i-up">{fmt(p.precio_unitario)}</td>
                   <td className="i-tot">{fmt(p.precio_total)}</td>
@@ -588,6 +592,19 @@ function ScanPanel({ onSaved, historial = [], currentUser }) {
           notificar("🎯 Alerta de precio", `${a.producto.nombre}: ${fmt(a.precio_visto)} en ${a.tienda}`);
         });
       }
+      // Apply auto-tag rules
+      try {
+        const rules = JSON.parse(localStorage.getItem("ts_autotag_rules")||"[]");
+        for (const rule of rules) {
+          let match = false;
+          if (rule.field==="tienda" && datos.tienda?.toLowerCase().includes(rule.value.toLowerCase())) match=true;
+          if (rule.field==="total_gt" && datos.total > parseFloat(rule.value)) match=true;
+          if (rule.field==="total_lt" && datos.total < parseFloat(rule.value)) match=true;
+          if (match && datos.id) {
+            await fetch(`${API}/tickets/${datos.id}/tags`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({tag:rule.tag}) });
+          }
+        }
+      } catch {}
     } catch (err) {
       if (err.isDuplicate) { setDupWarning({ message: err.message, file: singleFile }); }
       else setSingleError(err.message);
@@ -789,7 +806,7 @@ function parseTicketDate(str) {
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-function DashboardView({ historial, onOpenTicket }) {
+function DashboardView({ historial, onOpenTicket, onYearReview }) {
   if (!historial.length) return (
     <div className="center-empty"><span className="ei">📊</span><p>Sin datos todavía.<br/>Escanea tu primer ticket.</p></div>
   );
@@ -926,6 +943,43 @@ function DashboardView({ historial, onOpenTicket }) {
           <span style={{fontFamily:"'Space Mono',monospace",fontSize:8,color:"#2D3748"}}>Más</span>
         </div>
       </div>
+
+      {/* Insights automáticos */}
+      {(() => {
+        const DIAS=["domingos","lunes","martes","miércoles","jueves","viernes","sábados"];
+        const daySpend=Array(7).fill(0),dayCount=Array(7).fill(0);
+        historial.forEach(t=>{const d=parseTicketDate(t.fecha_compra);if(!d)return;daySpend[d.getDay()]+=(t.total||0);dayCount[d.getDay()]++;});
+        const avgByDay=daySpend.map((s,i)=>dayCount[i]?s/dayCount[i]:0);
+        const validDays=avgByDay.map((v,i)=>({v,i})).filter(x=>dayCount[x.i]>=2);
+        if(validDays.length<2)return null;
+        const best=validDays.reduce((m,x)=>x.v<m.v?x:m);
+        const worst=validDays.reduce((m,x)=>x.v>m.v?x:m);
+        const storeAvgs=Object.entries(storeMap).filter(([,v])=>v.count>=2).map(([k,v])=>({k,avg:v.total/v.count}));
+        const cheapest=storeAvgs.reduce((m,s)=>s.avg<m.avg?s:m,storeAvgs[0]);
+        const insights=[];
+        if(best&&worst&&best.i!==worst.i){insights.push({icon:"📅",txt:`Gastas menos los ${DIAS[best.i]} (${fmt(best.v)} avg) y más los ${DIAS[worst.i]} (${fmt(worst.v)} avg)`});}
+        if(cheapest)insights.push({icon:"🏷️",txt:`Ticket medio más bajo en ${cheapest.k}: ${fmt(cheapest.avg)} por visita`});
+        const last30=historial.filter(t=>{const d=parseTicketDate(t.fecha_compra);return d&&(Date.now()-d.getTime())<30*864e5;});
+        const last30total=last30.reduce((s,t)=>s+(t.total||0),0);
+        if(last30.length>1)insights.push({icon:"📊",txt:`Últimos 30 días: ${fmt(last30total)} en ${last30.length} tickets`});
+        if(!insights.length)return null;
+        return (<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div className="sec-label" style={{margin:0,flex:1}}>Insights</div>
+            <button onClick={onYearReview} style={{background:"rgba(0,229,160,.08)",border:"1px solid rgba(0,229,160,.2)",color:"#00E5A0",borderRadius:8,padding:"4px 12px",fontFamily:"'Space Mono',monospace",fontSize:10,cursor:"pointer",flexShrink:0,marginLeft:8}}>
+              📅 {now.getFullYear()} en revisión
+            </button>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:22}}>
+            {insights.map((ins,i)=>(
+              <div key={i} style={{background:"rgba(0,229,160,.04)",border:"1px solid rgba(0,229,160,.12)",borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
+                <span style={{fontSize:16,flexShrink:0}}>{ins.icon}</span>
+                <span style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"#6B7280",lineHeight:1.5}}>{ins.txt}</span>
+              </div>
+            ))}
+          </div>
+        </>);
+      })()}
 
       <div className="sec-label">Resumen</div>
       <div className="dash-grid">
@@ -1112,6 +1166,56 @@ function TicketDetail({ ticket, onBack, onRefresh, navList = [], onNavigate, tag
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
+// ── Year in Review Modal ──────────────────────────────────────────────────────
+function YearReviewModal({ historial, onClose }) {
+  const now = new Date(); const y = now.getFullYear();
+  const yearTickets = historial.filter(t=>{ const d=parseTicketDate(t.fecha_compra); return d&&d.getFullYear()===y; });
+  const totalY = yearTickets.reduce((s,t)=>s+(t.total||0),0);
+  const avgY = yearTickets.length?totalY/yearTickets.length:0;
+  const storeMap={};yearTickets.forEach(t=>{const k=t.tienda||"Desconocida";if(!storeMap[k])storeMap[k]=0;storeMap[k]+=t.total||0;});
+  const topStore=Object.entries(storeMap).sort((a,b)=>b[1]-a[1])[0];
+  const monthMap={};
+  yearTickets.forEach(t=>{const d=parseTicketDate(t.fecha_compra);if(!d)return;const k=d.getMonth();if(!monthMap[k])monthMap[k]=0;monthMap[k]+=t.total||0;});
+  const MESES=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const months=Array.from({length:12},(_,i)=>({m:MESES[i],v:monthMap[i]||0}));
+  const maxM=Math.max(...months.map(m=>m.v),0.01);
+  const peakMonth=months.reduce((best,m)=>m.v>best.v?m:best,months[0]);
+  const bigTicket=yearTickets.reduce((m,t)=>(t.total||0)>(m.total||0)?t:m,yearTickets[0]||{});
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:16,backdropFilter:"blur(4px)"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:"#0D1220",border:"1px solid #1E2A3A",borderRadius:20,width:"100%",maxWidth:560,maxHeight:"90vh",overflow:"auto",padding:28,animation:"fadeUp .3s ease"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
+          <div>
+            <div style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#00E5A0",letterSpacing:3,textTransform:"uppercase",marginBottom:4}}>Tu año en números</div>
+            <div style={{fontSize:22,fontWeight:800}}>{y} en revisión 🎉</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#4A5568",fontSize:22,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+          {[["Total gastado",fmt(totalY),"#00E5A0"],["Tickets",yearTickets.length,"#E8EDF5"],["Ticket medio",fmt(avgY),"#E8EDF5"],["Tiendas",Object.keys(storeMap).length,"#E8EDF5"]].map(([l,v,c])=>(
+            <div key={l} style={{background:"#111827",border:"1px solid #1E2A3A",borderRadius:12,padding:"14px 16px"}}>
+              <div style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#4A5568",textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>{l}</div>
+              <div style={{fontSize:20,fontWeight:800,color:c}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        {topStore&&<div style={{background:"rgba(0,229,160,.06)",border:"1px solid rgba(0,229,160,.2)",borderRadius:12,padding:"12px 16px",marginBottom:16,fontFamily:"'Space Mono',monospace",fontSize:12}}>🏆 Tienda favorita: <span style={{color:"#00E5A0",fontWeight:700}}>{topStore[0]}</span> — {fmt(topStore[1])}</div>}
+        {peakMonth.v>0&&<div style={{background:"rgba(251,191,36,.06)",border:"1px solid rgba(251,191,36,.2)",borderRadius:12,padding:"12px 16px",marginBottom:16,fontFamily:"'Space Mono',monospace",fontSize:12}}>📈 Mes más caro: <span style={{color:"#FCD34D",fontWeight:700}}>{peakMonth.m}</span> — {fmt(peakMonth.v)}</div>}
+        {bigTicket.id&&<div style={{background:"rgba(239,68,68,.06)",border:"1px solid rgba(239,68,68,.15)",borderRadius:12,padding:"12px 16px",marginBottom:20,fontFamily:"'Space Mono',monospace",fontSize:12}}>💸 Compra más grande: <span style={{color:"#F87171",fontWeight:700}}>{fmt(bigTicket.total)}</span> en {bigTicket.tienda||"ticket #"+bigTicket.id}</div>}
+        <div style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:"#4A5568",textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Gasto mensual {y}</div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:4,height:80,marginBottom:8}}>
+          {months.map((m,i)=>(
+            <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+              <div style={{width:"100%",borderRadius:"3px 3px 0 0",background:m.v===peakMonth.v?"#00E5A0":"rgba(0,229,160,.35)",minHeight:m.v?2:0,height:`${(m.v/maxM)*70}px`,transition:"height .3s"}}/>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:7,color:"#4A5568"}}>{m.m}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function generateMonthlyReport(historial) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth();
@@ -1150,6 +1254,20 @@ function generateMonthlyReport(historial) {
 function Settings({ historial, theme, onThemeToggle, pwaPrompt }) {
   const [importing, setImporting] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [autoRules, setAutoRules] = useState(() => { try { return JSON.parse(localStorage.getItem("ts_autotag_rules")||"[]"); } catch { return []; } });
+  const [newRuleField, setNewRuleField] = useState("tienda");
+  const [newRuleValue, setNewRuleValue] = useState("");
+  const [newRuleTag, setNewRuleTag] = useState("");
+  const addAutoRule = () => {
+    if (!newRuleValue.trim()||!newRuleTag.trim()) return;
+    const next=[...autoRules,{field:newRuleField,value:newRuleValue.trim(),tag:newRuleTag.trim()}];
+    setAutoRules(next); localStorage.setItem("ts_autotag_rules",JSON.stringify(next));
+    setNewRuleValue(""); setNewRuleTag("");
+  };
+  const delAutoRule = (i) => {
+    const next=autoRules.filter((_,j)=>j!==i);
+    setAutoRules(next); localStorage.setItem("ts_autotag_rules",JSON.stringify(next));
+  };
   const [ivaReport, setIvaReport] = useState(null);
   const [ivaYear, setIvaYear] = useState(new Date().getFullYear());
   const [ivaQ, setIvaQ] = useState(Math.ceil((new Date().getMonth()+1)/3));
@@ -1327,6 +1445,30 @@ function Settings({ historial, theme, onThemeToggle, pwaPrompt }) {
       </div>
 
       <div className="settings-section">
+        <div className="settings-title">🏷️ Auto-etiquetado</div>
+        <div style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#4A5568",marginBottom:10}}>
+          Aplica tags automáticamente al escanear un ticket según condiciones.
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10}}>
+          <select value={newRuleField} onChange={e=>setNewRuleField(e.target.value)} className="form-inp-sm" style={{width:90}}>
+            <option value="tienda">Tienda</option>
+            <option value="total_gt">Total &gt;</option>
+            <option value="total_lt">Total &lt;</option>
+          </select>
+          <input className="form-inp-sm" placeholder={newRuleField==="tienda"?"Mercadona…":"Importe…"} value={newRuleValue} onChange={e=>setNewRuleValue(e.target.value)} style={{flex:1,minWidth:90}}/>
+          <span style={{fontFamily:"'Space Mono',monospace",fontSize:10,color:"#4A5568",flexShrink:0}}>→ tag:</span>
+          <input className="form-inp-sm" placeholder="supermercado…" value={newRuleTag} onChange={e=>setNewRuleTag(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addAutoRule()} style={{flex:1,minWidth:90}}/>
+          <button className="btn btn-primary" style={{fontSize:12,padding:"7px 12px"}} onClick={addAutoRule}>+ Añadir</button>
+        </div>
+        {autoRules.length>0 ? autoRules.map((r,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid rgba(30,42,58,.4)",fontFamily:"'Space Mono',monospace",fontSize:11}}>
+            <span style={{color:"#4A5568",flex:1}}>Si <span style={{color:"#00B8FF"}}>{r.field}</span> contiene "<span style={{color:"#E8EDF5"}}>{r.value}</span>" → tag <span style={{color:"#00E5A0"}}>"{r.tag}"</span></span>
+            <button onClick={()=>delAutoRule(i)} style={{background:"none",border:"none",color:"#2D3748",cursor:"pointer",fontSize:13,padding:"2px 4px"}} onMouseEnter={e=>e.currentTarget.style.color="#EF4444"} onMouseLeave={e=>e.currentTarget.style.color="#2D3748"}>✕</button>
+          </div>
+        )) : <div style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"#2D3748"}}>Sin reglas todavía.</div>}
+      </div>
+
+      <div className="settings-section">
         <div className="settings-title">🔔 Notificaciones</div>
         <div className="settings-row">
           <div><div className="settings-lbl">Notificaciones del navegador</div><div className="settings-desc">Aviso automático al terminar análisis</div></div>
@@ -1377,6 +1519,8 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem("ts_tag_colors")||"{}"); } catch { return {}; }
   });
   const [pwaPrompt, setPwaPrompt] = useState(null);
+  const [undoQueue, setUndoQueue] = useState([]);
+  const [showYearReview, setShowYearReview] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const searchRef = useRef();
   const searchDebounce = useRef();
@@ -1408,6 +1552,24 @@ export default function App() {
       return next;
     });
   }, []);
+
+  // Mini stats sidebar
+  const thisMonthTotal = useMemo(() => {
+    const now=new Date(); const y=now.getFullYear(); const m=now.getMonth();
+    return historial.filter(t=>{const d=parseTicketDate(t.fecha_compra);return d&&d.getFullYear()===y&&d.getMonth()===m;}).reduce((s,t)=>s+(t.total||0),0);
+  }, [historial]);
+  const lastMonthTotal = useMemo(() => {
+    const now=new Date(); const m=now.getMonth()-1; const y=m<0?now.getFullYear()-1:now.getFullYear(); const adjM=m<0?11:m;
+    return historial.filter(t=>{const d=parseTicketDate(t.fecha_compra);return d&&d.getFullYear()===y&&d.getMonth()===adjM;}).reduce((s,t)=>s+(t.total||0),0);
+  }, [historial]);
+
+  const cancelDelete = useCallback((id) => {
+    setUndoQueue(prev => {
+      const q=prev.find(q=>q.id===id); if(q)clearTimeout(q.timerId);
+      return prev.filter(q=>q.id!==id);
+    });
+    loadHistorial();
+  }, [loadHistorial]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1513,13 +1675,17 @@ export default function App() {
     if (view === "detail") { setView("dash"); setSelected(null); }
   };
 
-  const deleteTicket = async (e, id) => {
+  const deleteTicket = useCallback((e, id) => {
     e.stopPropagation();
-    if (!confirm("¿Eliminar este ticket? Se guardará en la papelera 30 días.")) return;
-    await fetch(`${API}/tickets/${id}`, { method:"DELETE", headers:authHeaders() });
+    const nome = historial.find(t=>t.id===id)?.tienda || `#${id}`;
     if (selected?.id===id) { setView("dash"); setSelected(null); }
-    loadHistorial();
-  };
+    setHistorial(prev => prev.filter(t => t.id !== id)); // optimistic
+    const timerId = setTimeout(async () => {
+      await fetch(`${API}/tickets/${id}`, { method:"DELETE", headers:{"Authorization":`Bearer ${token}`} });
+      setUndoQueue(prev => prev.filter(q => q.id !== id));
+    }, 5500);
+    setUndoQueue(prev => [...prev, { id, nome, timerId }]);
+  }, [historial, selected, token]);
 
   const openDetail = async (ticket) => {
     const r = await fetch(`${API}/tickets/${ticket.id}`, { headers:authHeaders() });
@@ -1578,7 +1744,7 @@ export default function App() {
   const navItems = [
     ["dash","📊 Dashboard"],["analytics","📈 Análisis"],["advanced","🔬 Avanzado"],
     ["scan","📷 Escanear"],["lista","🛒 Lista"],["budget","💶 Presupuesto"],
-    ["compare","🔍 Comparar"],["alerts","🔔 Alertas"],["trash","🗑️ Papelera"],["settings","⚙️ Ajustes"]
+    ["compare","🔍 Comparar"],["chat","🤖 Chat"],["alerts","🔔 Alertas"],["trash","🗑️ Papelera"],["settings","⚙️ Ajustes"]
   ];
 
   return (
@@ -1675,6 +1841,16 @@ export default function App() {
           </div>
         )}
 
+        {historial.length>0 && (
+          <div style={{padding:"6px 14px 8px",borderBottom:"1px solid #1E2A3A",flexShrink:0}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:8,color:"#4A5568",letterSpacing:1.5,textTransform:"uppercase"}}>Este mes</span>
+              <span style={{fontFamily:"'Space Mono',monospace",fontSize:12,fontWeight:700,color:"#00E5A0"}}>{fmt(thisMonthTotal)}</span>
+            </div>
+            {lastMonthTotal>0 && (()=>{const p=Math.round(((thisMonthTotal-lastMonthTotal)/lastMonthTotal)*100);return <div style={{fontFamily:"'Space Mono',monospace",fontSize:9,color:p>15?"#F87171":p<-5?"#34D399":"#4A5568",textAlign:"right"}}>{p>0?`+${p}%`:`${p}%`} vs mes pasado</div>;})()}
+          </div>
+        )}
+
         <div className="hist-list">
           {displayedTickets.length===0 ? (
             <div className="hist-empty">{search||tagFilter?"Sin resultados":"Sin tickets todavía"}</div>
@@ -1756,10 +1932,11 @@ export default function App() {
             : view==="lista" ? <ShoppingList/>
             : view==="budget" ? <Budget/>
             : view==="compare" ? <Compare historial={historial}/>
+            : view==="chat" ? <Chat/>
             : view==="alerts" ? <PriceAlerts/>
             : view==="trash" ? <Trash onRestored={loadHistorial}/>
             : view==="settings" ? <Settings historial={historial} theme={theme} onThemeToggle={toggleTheme} pwaPrompt={pwaPrompt}/>
-            : <DashboardView historial={historial} onOpenTicket={openDetail}/>
+            : <DashboardView historial={historial} onOpenTicket={openDetail} onYearReview={()=>setShowYearReview(true)}/>
           }
         </div>
       </main>
@@ -1785,6 +1962,21 @@ export default function App() {
           })()}
         </div>
       )}
+
+      {/* Undo toast */}
+      {undoQueue.length>0 && (
+        <div style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",zIndex:400,display:"flex",flexDirection:"column",gap:6,alignItems:"center"}}>
+          {undoQueue.map(q=>(
+            <div key={q.id} style={{background:"#1E2A3A",border:"1px solid #2D3748",borderRadius:30,padding:"10px 18px",display:"flex",alignItems:"center",gap:12,fontFamily:"'Space Mono',monospace",fontSize:11,boxShadow:"0 4px 24px rgba(0,0,0,.7)",animation:"fadeUp .2s ease",whiteSpace:"nowrap"}}>
+              <span style={{color:"#6B7280"}}>🗑️ <span style={{color:"#E8EDF5"}}>{q.nome}</span> eliminado</span>
+              <button onClick={()=>cancelDelete(q.id)} style={{background:"#00E5A0",border:"none",color:"#0A0E1A",borderRadius:20,padding:"4px 14px",fontFamily:"'Space Mono',monospace",fontSize:11,fontWeight:700,cursor:"pointer"}}>↩️ Deshacer</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Year in review modal */}
+      {showYearReview && <YearReviewModal historial={historial} onClose={()=>setShowYearReview(false)}/>}
     </div>
   );
 }

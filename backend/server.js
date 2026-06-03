@@ -338,8 +338,8 @@ app.delete("/api/trash/:id/permanent", async (req, res) => {
 
 // ── Productos CRUD ────────────────────────────────────────────────────────────
 app.put("/api/productos/:id", async (req, res) => {
-  const { nombre,cantidad,precio_unitario,precio_total,categoria } = req.body;
-  await supabase.from("productos").update({ nombre,cantidad,precio_unitario,precio_total,categoria:categoria||categorizar(nombre) }).eq("id",req.params.id);
+  const { nombre,cantidad,precio_unitario,precio_total,categoria,notas } = req.body;
+  await supabase.from("productos").update({ nombre,cantidad,precio_unitario,precio_total,categoria:categoria||categorizar(nombre),notas:notas||null }).eq("id",req.params.id);
   res.json({ ok:true });
 });
 app.delete("/api/productos/:id", async (req, res) => {
@@ -615,6 +615,74 @@ app.get("/api/lista-compra", async (req, res) => {
       urgencia:Math.round(urgencia*100)/100,precio_medio,veces:p.tickets.size,sugerencia_granel:granel };
   }).filter(p=>p&&p.urgencia>=0.6&&p.dias_desde<=180).sort((a,b)=>b.urgencia-a.urgencia);
   res.json(result);
+});
+
+// ── Chat con datos ────────────────────────────────────────────────────────────
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { message, history = [] } = req.body;
+    if (!message?.trim()) return res.status(400).json({ error:"Mensaje vacío" });
+    if (!process.env.GROQ_API_KEY) return res.status(500).json({ error:"Falta GROQ_API_KEY" });
+    const { data:tickets } = await supabase.from("tickets").select("id,tienda,total,fecha_compra,fecha_escaneo").is("deleted_at",null).order("id",{ascending:false});
+    const { data:prods } = await supabase.from("productos").select("nombre,categoria,precio_total,ticket_id");
+    const totalGastado = (tickets||[]).reduce((s,t)=>s+(t.total||0),0);
+    const storeMap={}; (tickets||[]).forEach(t=>{const k=t.tienda||"Desconocida";if(!storeMap[k])storeMap[k]=0;storeMap[k]+=(t.total||0);});
+    const topStores=Object.entries(storeMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`${k}: ${v.toFixed(2)}€`).join("\n");
+    const catMap={}; (prods||[]).forEach(p=>{if(!catMap[p.categoria])catMap[p.categoria]=0;catMap[p.categoria]+=(p.precio_total||0);});
+    const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>`${k}: ${v.toFixed(2)}€`).join("\n");
+    const now=new Date(); const monthMap={};
+    (tickets||[]).forEach(t=>{
+      const d=t.fecha_compra?t.fecha_compra.includes("/")?new Date(t.fecha_compra.split("/").reverse().join("-")):new Date(t.fecha_compra):null;
+      if(!d||isNaN(d)||(now-d)/86400000>365)return;
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      if(!monthMap[k])monthMap[k]=0; monthMap[k]+=t.total||0;
+    });
+    const monthSummary=Object.entries(monthMap).sort().slice(-6).map(([k,v])=>`${k}: ${v.toFixed(2)}€`).join(" | ");
+    const systemPrompt=`Eres un asistente financiero personal. Analizas datos de compra del usuario y respondes en español, de forma concisa y útil.
+
+DATOS (actualizados):
+- Total histórico: ${totalGastado.toFixed(2)}€ · ${(tickets||[]).length} tickets · ticket medio: ${((tickets||[]).length?totalGastado/(tickets||[]).length:0).toFixed(2)}€
+
+TIENDAS:\n${topStores}
+
+CATEGORÍAS:\n${topCats}
+
+ÚLTIMOS 6 MESES: ${monthSummary||"sin datos"}
+
+Responde en español. Máx 3 párrafos cortos. Usa los datos para dar respuestas concretas con números. Si no puedes responder con los datos disponibles, dilo.`;
+    const messages=[{role:"system",content:systemPrompt},...history.slice(-8).map(m=>({role:m.role,content:m.content})),{role:"user",content:message}];
+    const groqRes=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${process.env.GROQ_API_KEY}`},body:JSON.stringify({model:"meta-llama/llama-4-scout-17b-16e-instruct",messages,max_tokens:600,temperature:0.35})});
+    const groqData=await groqRes.json();
+    if(!groqRes.ok)return res.status(500).json({error:groqData?.error?.message||"Error Groq"});
+    res.json({reply:groqData.choices[0].message.content});
+  } catch(e){res.status(500).json({error:e.message});}
+});
+
+// ── Detección suscripciones ───────────────────────────────────────────────────
+app.get("/api/stats/suscripciones", async (req, res) => {
+  const { data:tickets } = await supabase.from("tickets").select("id,tienda,total,fecha_compra").is("deleted_at",null).not("total","is",null).not("tienda","is",null);
+  function parseFecha(s){if(!s)return 0;if(s.includes("/")){const[d,m,y]=s.split("/");return new Date(y,m-1,d).getTime();}return new Date(s).getTime();}
+  const storeMap={};
+  (tickets||[]).forEach(t=>{if(!storeMap[t.tienda])storeMap[t.tienda]=[];storeMap[t.tienda].push({id:t.id,total:t.total,fecha:t.fecha_compra,ts:parseFecha(t.fecha_compra)});});
+  const suspects=[];
+  for(const[tienda,tks]of Object.entries(storeMap)){
+    if(tks.length<3)continue;
+    const sorted=tks.slice().sort((a,b)=>a.ts-b.ts);
+    const seen=new Set();
+    for(let i=0;i<sorted.length;i++){
+      if(seen.has(i))continue;
+      const base=sorted[i].total; const group=[sorted[i]];
+      for(let j=i+1;j<sorted.length;j++){if(Math.abs(sorted[j].total-base)/base<0.08){group.push(sorted[j]);seen.add(j);}}
+      if(group.length<3)continue;
+      const gsorted=group.slice().sort((a,b)=>a.ts-b.ts);
+      const diffs=gsorted.slice(1).map((t,idx)=>(t.ts-gsorted[idx].ts)/86400000);
+      const avgDiff=diffs.reduce((a,b)=>a+b,0)/diffs.length;
+      if(avgDiff<18||avgDiff>50)continue;
+      suspects.push({tienda,importe_medio:Math.round(base*100)/100,apariciones:group.length,intervalo_dias:Math.round(avgDiff),ultima:gsorted[gsorted.length-1].fecha,primera:gsorted[0].fecha,tickets:group.map(t=>({id:t.id,total:t.total,fecha:t.fecha}))});
+      seen.add(i);
+    }
+  }
+  res.json(suspects.sort((a,b)=>b.apariciones-a.apariciones));
 });
 
 // ── Stats: inflación por categoría ───────────────────────────────────────────

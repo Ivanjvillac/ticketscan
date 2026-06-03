@@ -133,7 +133,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ nombre:p.nombre, cantidad:parseFloat(p.cantidad)||1,
               precio_unitario:parseFloat(p.precio_unitario)||null, precio_total:parseFloat(p.precio_total)||null,
-              categoria:p.categoria })
+              categoria:p.categoria, notas:p.notas||null })
           });
         }
       }
@@ -192,7 +192,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
 
         <table className="prod-table">
           <thead>
-            <tr><th>Producto</th><th>Uds</th><th>P.Unit €</th><th>Total €</th><th>Categoría</th><th></th></tr>
+            <tr><th>Producto</th><th>Uds</th><th>P.Unit €</th><th>Total €</th><th>Categoría</th><th>Notas</th><th></th></tr>
           </thead>
           <tbody>
             {productos.map((p, i) => p._deleted ? null : (
@@ -209,6 +209,7 @@ export default function EditModal({ ticket, onClose, onSaved }) {
                     {CATS.map(c=><option key={c} value={c}>{c}</option>)}
                   </select>
                 </td>
+                <td style={{minWidth:80}}><input className="prod-inp" placeholder="nota…" value={p.notas||""} onChange={e=>updateProd(i,"notas",e.target.value)} style={{color:"#6B7280",fontSize:11}}/></td>
                 <td style={{width:32}}><button className="del-prod-btn" onClick={()=>deleteProd(i)}>✕</button></td>
               </tr>
             ))}
