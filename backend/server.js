@@ -173,7 +173,15 @@ Formato: {"tienda":"string o null","fecha":"DD/MM/YYYY o null","hora":"HH:MM o n
     });
 
     const groqData = await groqRes.json();
-    if (!groqRes.ok) return res.status(500).json({ error: groqData?.error?.message||"Error Groq" });
+    if (!groqRes.ok) {
+      const raw = groqData?.error?.message || "";
+      let msg = "Error al contactar con el servicio de análisis.";
+      if (raw.toLowerCase().includes("restricted")) msg = "La cuenta de Groq está restringida. Contacta con support@groq.com o revisa console.groq.com.";
+      else if (groqRes.status === 429 || raw.toLowerCase().includes("rate limit")) msg = "Límite de peticiones Groq alcanzado. Espera unos minutos e inténtalo de nuevo.";
+      else if (groqRes.status === 401) msg = "API key de Groq inválida. Revisa la variable GROQ_API_KEY.";
+      else if (raw) msg = raw;
+      return res.status(500).json({ error: msg });
+    }
 
     const text = groqData.choices?.[0]?.message?.content||"";
     const clean = text.replace(/```json|```/g,"").trim();
@@ -653,7 +661,7 @@ Responde en español. Máx 3 párrafos cortos. Usa los datos para dar respuestas
     const messages=[{role:"system",content:systemPrompt},...history.slice(-8).map(m=>({role:m.role,content:m.content})),{role:"user",content:message}];
     const groqRes=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${process.env.GROQ_API_KEY}`},body:JSON.stringify({model:"meta-llama/llama-4-scout-17b-16e-instruct",messages,max_tokens:600,temperature:0.35})});
     const groqData=await groqRes.json();
-    if(!groqRes.ok)return res.status(500).json({error:groqData?.error?.message||"Error Groq"});
+    if(!groqRes.ok){const raw=groqData?.error?.message||"";let msg="Error al contactar con el servicio de IA.";if(raw.toLowerCase().includes("restricted"))msg="La cuenta de Groq está restringida. Revisa console.groq.com.";else if(groqRes.status===429||raw.toLowerCase().includes("rate limit"))msg="Límite de peticiones Groq alcanzado. Espera unos minutos.";else if(groqRes.status===401)msg="API key de Groq inválida.";else if(raw)msg=raw;return res.status(500).json({error:msg});}
     res.json({reply:groqData.choices[0].message.content});
   } catch(e){res.status(500).json({error:e.message});}
 });
