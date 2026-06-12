@@ -92,7 +92,7 @@ const SESSIONS = new Map(); // token → { nombre }
 function auth(req, res, next) {
   const hasAuth = process.env.AUTH_PASSWORD || MULTI_USERS?.length;
   if (!hasAuth) return next();
-  const pub = ["/api/login","/api/check","/api/s/"];
+  const pub = ["/api/login","/api/check","/api/ping","/api/s/"];
   if (pub.some(p=>req.path.startsWith(p))) return next();
   const token = req.headers.authorization?.replace("Bearer ","");
   if (!token||!SESSIONS.has(token)) return res.status(401).json({ error:"No autorizado" });
@@ -118,6 +118,13 @@ app.post("/api/login", (req, res) => {
   SESSIONS.set(token, { nombre: userName });
   res.json({ token, user: userName, needsAuth:true });
 });
+app.get("/api/ping", async (req, res) => {
+  try {
+    const { count } = await supabase.from("tickets").select("*", { count:"exact", head:true });
+    res.json({ ok: true, tickets: count, ts: new Date().toISOString() });
+  } catch(e) { res.json({ ok: false, error: e.message }); }
+});
+
 app.get("/api/check", (req, res) => res.json({
   needsAuth: !!(process.env.AUTH_PASSWORD || MULTI_USERS?.length),
   multiUser: !!(MULTI_USERS?.length),
