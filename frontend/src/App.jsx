@@ -1481,6 +1481,27 @@ function Settings({ historial, theme, onThemeToggle, pwaPrompt }) {
       </div>
 
       <div className="settings-section">
+        <div className="settings-title">🏠 Gestión del Hogar</div>
+        <div className="settings-row">
+          <div>
+            <div className="settings-lbl">Volcar tickets históricos</div>
+            <div className="settings-desc">Envía todos los tickets ya guardados a la app de gestión del hogar</div>
+          </div>
+          <button className="btn btn-ghost" style={{fontSize:12,padding:"7px 14px",whiteSpace:"nowrap"}} onClick={async()=>{
+            setMsg("⏳ Sincronizando…");
+            try {
+              const tk = localStorage.getItem("ts_token")||"noauth";
+              const r = await fetch(`${API}/firebase-backfill`, { method:"POST", headers:{"Authorization":`Bearer ${tk}`} });
+              const d = await r.json();
+              if (d.ok) setMsg(`✅ ${d.synced} tickets enviados (${d.skipped} ya existían)`);
+              else setMsg(`❌ ${d.error}`);
+            } catch(e) { setMsg(`❌ ${e.message}`); }
+            setTimeout(()=>setMsg(null), 6000);
+          }}>Sincronizar</button>
+        </div>
+      </div>
+
+      <div className="settings-section">
         <div className="settings-title">ℹ️ Estado</div>
         <div className="settings-row"><div><div className="settings-lbl">Tickets guardados</div></div><span style={{fontFamily:"'Space Mono',monospace",fontWeight:700,color:"#00E5A0"}}>{historial.length}</span></div>
         <div className="settings-row"><div><div className="settings-lbl">Versión</div></div><span style={{fontFamily:"'Space Mono',monospace",fontSize:11,color:"#4A5568"}}>TicketScan 3.0</span></div>
