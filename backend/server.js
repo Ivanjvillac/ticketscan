@@ -164,6 +164,44 @@ app.get("/api/ping", async (req, res) => {
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
 
+app.post("/api/firebase-backfill", async (req, res) => {
+  if (!firestoreDb) return res.status(503).json({ error: "Firebase no configurado. Añade FIREBASE_SERVICE_ACCOUNT en Render." });
+  try {
+    // IDs ya existentes en Firestore con source=ticketscan
+    const snap = await firestoreDb.collection("expenses").where("source", "==", "ticketscan").get();
+    const existingIds = new Set(snap.docs.map(d => d.data().ticketscanId));
+
+    const { data: tickets } = await supabase.from("tickets")
+      .select("id,tienda,fecha_compra,total,subido_por")
+      .is("deleted_at", null)
+      .not("total", "is", null);
+
+    let synced = 0, skipped = 0;
+    for (const t of (tickets || [])) {
+      if (existingIds.has(t.id)) { skipped++; continue; }
+      let dateObj = new Date();
+      if (t.fecha_compra) {
+        const [d, m, y] = t.fecha_compra.split("/");
+        if (d && m && y) dateObj = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+      }
+      const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,"0")}-${String(dateObj.getDate()).padStart(2,"0")}`;
+      await firestoreDb.collection("expenses").add({
+        amount: parseFloat(t.total),
+        category: "Compras",
+        description: t.tienda ? `${t.tienda} (ticket #${t.id})` : `Ticket #${t.id}`,
+        paid_by: t.subido_por || "ticketscan",
+        date: dateStr,
+        split_between: [],
+        source: "ticketscan",
+        ticketscanId: t.id,
+        createdAt: Timestamp.now(),
+      });
+      synced++;
+    }
+    res.json({ ok: true, synced, skipped });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/check", (req, res) => res.json({
   needsAuth: !!(process.env.AUTH_PASSWORD || MULTI_USERS?.length),
   multiUser: !!(MULTI_USERS?.length),
