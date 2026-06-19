@@ -3,6 +3,43 @@ import cors from "cors";
 import "dotenv/config";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { initializeApp as initFirebase, cert, getApps } from "firebase-admin/app";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
+
+// ── Firebase Admin (opcional — solo si FIREBASE_SERVICE_ACCOUNT está configurado)
+let firestoreDb = null;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    if (!getApps().length) initFirebase({ credential: cert(sa) });
+    firestoreDb = getFirestore();
+    console.log("✅ Firebase Admin conectado →", sa.project_id);
+  } catch (e) { console.warn("⚠️ Firebase Admin init error:", e.message); }
+}
+
+async function syncToFirebase(datos, ticketId, subidoPor) {
+  if (!firestoreDb || !datos.total) return;
+  try {
+    // Parsear fecha DD/MM/YYYY → Date
+    let dateObj = new Date();
+    if (datos.fecha) {
+      const [d,m,y] = datos.fecha.split("/");
+      if (d && m && y) dateObj = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+    }
+    await firestoreDb.collection("expenses").add({
+      amount: parseFloat(datos.total),
+      category: "Compras",
+      description: datos.tienda ? `${datos.tienda} (ticket #${ticketId})` : `Ticket #${ticketId}`,
+      paid_by: subidoPor || "ticketscan",
+      date: Timestamp.fromDate(dateObj),
+      split_between: [],
+      source: "ticketscan",
+      ticketscanId: ticketId,
+      createdAt: Timestamp.now(),
+    });
+    console.log(`🔄 Ticket #${ticketId} sincronizado → Firebase expenses`);
+  } catch (e) { console.warn("⚠️ Firebase sync error:", e.message); }
+}
 
 const app = express();
 app.use(cors({
@@ -242,6 +279,9 @@ Formato: {"tienda":"string o null","fecha":"DD/MM/YYYY o null","hora":"HH:MM o n
       }));
       await supabase.from("productos").insert(prods);
     }
+
+    // Sincronizar con Firebase (gestión hogar) — no bloquea la respuesta
+    syncToFirebase(datos, ticketId, subido_por || req.user?.nombre || null).catch(() => {});
 
     // Comprobar alertas de precio
     const { data: alertas } = await supabase.from("price_alerts").select("*").eq("activa",1);
