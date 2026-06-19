@@ -164,6 +164,24 @@ app.get("/api/ping", async (req, res) => {
   } catch(e) { res.json({ ok: false, error: e.message }); }
 });
 
+app.post("/api/firebase-dedup", async (req, res) => {
+  if (!firestoreDb) return res.status(503).json({ error: "Firebase no configurado." });
+  try {
+    const snap = await firestoreDb.collection("expenses").where("source", "==", "ticketscan").get();
+    const byId = {};
+    snap.docs.forEach(d => {
+      const tid = d.data().ticketscanId;
+      if (!byId[tid]) byId[tid] = [];
+      byId[tid].push(d.ref);
+    });
+    let deleted = 0;
+    for (const refs of Object.values(byId)) {
+      for (const ref of refs.slice(1)) { await ref.delete(); deleted++; }
+    }
+    res.json({ ok: true, deleted });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post("/api/firebase-backfill", async (req, res) => {
   if (!firestoreDb) return res.status(503).json({ error: "Firebase no configurado. Añade FIREBASE_SERVICE_ACCOUNT en Render." });
   try {

@@ -1487,17 +1487,31 @@ function Settings({ historial, theme, onThemeToggle, pwaPrompt }) {
             <div className="settings-lbl">Volcar tickets históricos</div>
             <div className="settings-desc">Envía todos los tickets ya guardados a la app de gestión del hogar</div>
           </div>
-          <button className="btn btn-ghost" style={{fontSize:12,padding:"7px 14px",whiteSpace:"nowrap"}} onClick={async()=>{
-            setMsg("⏳ Sincronizando…");
-            try {
-              const tk = localStorage.getItem("ts_token")||"noauth";
-              const r = await fetch(`${API}/firebase-backfill`, { method:"POST", headers:{"Authorization":`Bearer ${tk}`} });
-              const d = await r.json();
-              if (d.ok) setMsg(`✅ ${d.synced} tickets enviados (${d.skipped} ya existían)`);
-              else setMsg(`❌ ${d.error}`);
-            } catch(e) { setMsg(`❌ ${e.message}`); }
-            setTimeout(()=>setMsg(null), 6000);
-          }}>Sincronizar</button>
+          <div style={{display:"flex",gap:6}}>
+            <button className="btn btn-ghost" style={{fontSize:12,padding:"7px 14px",whiteSpace:"nowrap"}} onClick={async()=>{
+              setMsg("⏳ Sincronizando…");
+              try {
+                const tk = localStorage.getItem("ts_token")||"noauth";
+                const r = await fetch(`${API}/firebase-backfill`, { method:"POST", headers:{"Authorization":`Bearer ${tk}`} });
+                const d = await r.json();
+                if (d.ok) setMsg(`✅ ${d.synced} tickets enviados (${d.skipped} ya existían)`);
+                else setMsg(`❌ ${d.error}`);
+              } catch(e) { setMsg(`❌ ${e.message}`); }
+              setTimeout(()=>setMsg(null), 6000);
+            }}>Sincronizar</button>
+            <button className="btn btn-ghost" style={{fontSize:12,padding:"7px 14px",whiteSpace:"nowrap",color:"#EF4444"}} onClick={async()=>{
+              if (!confirm("¿Borrar duplicados en gestión del hogar?")) return;
+              setMsg("⏳ Limpiando duplicados…");
+              try {
+                const tk = localStorage.getItem("ts_token")||"noauth";
+                const r = await fetch(`${API}/firebase-dedup`, { method:"POST", headers:{"Authorization":`Bearer ${tk}`} });
+                const d = await r.json();
+                if (d.ok) setMsg(`✅ ${d.deleted} duplicados eliminados`);
+                else setMsg(`❌ ${d.error}`);
+              } catch(e) { setMsg(`❌ ${e.message}`); }
+              setTimeout(()=>setMsg(null), 6000);
+            }}>Limpiar duplicados</button>
+          </div>
         </div>
       </div>
 
