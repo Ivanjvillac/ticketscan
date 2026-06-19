@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual de TicketScan</title>
+<style>
+  :root {
+    --green: #00E5A0;
+    --blue: #00B8FF;
+    --bg: #0A0F1A;
+    --card: #111827;
+    --border: #1E2A3A;
+    --text: #E8EDF5;
+    --muted: #6B7280;
+    --red: #EF4444;
+    --yellow: #F59E0B;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.7; }
+
+  /* Layout */
+  .layout { display: flex; min-height: 100vh; }
+  nav { width: 260px; background: var(--card); border-right: 1px solid var(--border); padding: 24px 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; flex-shrink: 0; }
+  main { flex: 1; padding: 40px 48px; max-width: 860px; }
+
+  /* Nav */
+  .nav-logo { padding: 0 20px 24px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .nav-logo h1 { font-size: 18px; font-weight: 700; color: var(--green); }
+  .nav-logo p { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  nav a { display: flex; align-items: center; gap: 10px; padding: 10px 20px; color: var(--muted); text-decoration: none; font-size: 13px; border-left: 3px solid transparent; transition: all .15s; }
+  nav a:hover, nav a.active { color: var(--text); border-left-color: var(--green); background: rgba(0,229,160,.06); }
+  .nav-section { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; padding: 16px 20px 4px; }
+
+  /* Content */
+  section { margin-bottom: 64px; scroll-margin-top: 32px; }
+  h2 { font-size: 26px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+  h2 .tag { font-size: 12px; background: rgba(0,229,160,.15); color: var(--green); padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+  .subtitle { color: var(--muted); margin-bottom: 28px; font-size: 14px; }
+  h3 { font-size: 16px; font-weight: 700; margin: 28px 0 10px; color: var(--green); }
+
+  /* Steps */
+  .steps { display: flex; flex-direction: column; gap: 14px; }
+  .step { display: flex; gap: 16px; align-items: flex-start; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+  .step-num { width: 32px; height: 32px; border-radius: 50%; background: var(--green); color: #0A0F1A; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step-body strong { display: block; margin-bottom: 3px; font-size: 15px; }
+  .step-body p { color: var(--muted); font-size: 13px; margin: 0; }
+
+  /* Tips */
+  .tip { background: rgba(0,229,160,.07); border: 1px solid rgba(0,229,160,.25); border-radius: 10px; padding: 14px 18px; margin: 18px 0; font-size: 13px; }
+  .tip strong { color: var(--green); }
+  .warn { background: rgba(245,158,11,.07); border: 1px solid rgba(245,158,11,.25); border-radius: 10px; padding: 14px 18px; margin: 18px 0; font-size: 13px; }
+  .warn strong { color: var(--yellow); }
+  .danger { background: rgba(239,68,68,.07); border: 1px solid rgba(239,68,68,.25); border-radius: 10px; padding: 14px 18px; margin: 18px 0; font-size: 13px; }
+  .danger strong { color: var(--red); }
+
+  /* Feature cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin: 16px 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card .icon { font-size: 24px; margin-bottom: 8px; }
+  .card strong { display: block; margin-bottom: 4px; font-size: 14px; }
+  .card p { font-size: 12px; color: var(--muted); }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  th { background: var(--card); padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid rgba(30,42,58,.5); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(0,229,160,.15); color: var(--green); }
+  .badge-blue { background: rgba(0,184,255,.15); color: var(--blue); }
+
+  /* Divider */
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+  /* Hero */
+  .hero { background: linear-gradient(135deg, rgba(0,229,160,.1) 0%, rgba(0,184,255,.06) 100%); border: 1px solid rgba(0,229,160,.2); border-radius: 16px; padding: 32px; margin-bottom: 48px; }
+  .hero h1 { font-size: 32px; font-weight: 800; margin-bottom: 8px; }
+  .hero p { color: var(--muted); max-width: 560px; }
+
+  /* Code */
+  code { background: rgba(255,255,255,.07); padding: 2px 6px; border-radius: 4px; font-family: 'Space Mono', monospace; font-size: 12px; color: var(--green); }
+
+  /* Menu visual */
+  .menu-bar { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+  .menu-btn { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .menu-btn.active { border-color: var(--green); color: var(--green); }
+
+  /* Mobile */
+  @media (max-width: 768px) {
+    nav { display: none; }
+    main { padding: 24px 20px; }
+    .cards { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* Scrollbar */
+  nav::-webkit-scrollbar { width: 4px; }
+  nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">
+    <h1>🧾 TicketScan</h1>
+    <p>Manual de usuario completo</p>
+  </div>
+
+  <div class="nav-section">Introducción</div>
+  <a href="#intro">🏠 ¿Qué es TicketScan?</a>
+  <a href="#menu">🗺️ Cómo moverse por la app</a>
+
+  <div class="nav-section">Funciones principales</div>
+  <a href="#escanear">📷 Escanear un ticket</a>
+  <a href="#historial">📋 Ver tickets guardados</a>
+  <a href="#editar">✏️ Editar un ticket</a>
+  <a href="#buscar">🔍 Buscar</a>
+  <a href="#tags">🏷️ Etiquetas (tags)</a>
+
+  <div class="nav-section">Estadísticas</div>
+  <a href="#dashboard">📊 Dashboard</a>
+  <a href="#analisis">🔬 Análisis</a>
+  <a href="#presupuesto">💶 Presupuesto</a>
+  <a href="#lista">🛒 Lista de la compra</a>
+  <a href="#comparar">⚖️ Comparar tickets</a>
+
+  <div class="nav-section">Herramientas</div>
+  <a href="#chat">🤖 Chat IA</a>
+  <a href="#alertas">🔔 Alertas de precio</a>
+  <a href="#compartir">🔗 Compartir tickets</a>
+  <a href="#papelera">🗑️ Papelera</a>
+
+  <div class="nav-section">Ajustes</div>
+  <a href="#ajustes">⚙️ Ajustes</a>
+  <a href="#backup">💾 Backup y exportar</a>
+  <a href="#gestionhogar">🏠 Gestión del Hogar</a>
+  <a href="#faq">❓ Preguntas frecuentes</a>
+</nav>
+
+<!-- MAIN -->
+<main>
+
+  <div class="hero">
+    <h1>🧾 Manual de TicketScan</h1>
+    <p>Guía completa para sacarle todo el partido a tu gestor de tickets de compra. Explica cada función paso a paso, sin tecnicismos.</p>
+  </div>
+
+  <!-- INTRO -->
+  <section id="intro">
+    <h2>🏠 ¿Qué es TicketScan?</h2>
+    <p class="subtitle">Tu app personal para guardar y analizar lo que gastas en el supermercado.</p>
+
+    <p>TicketScan te permite <strong>fotografiar tus tickets de compra</strong> y la app los lee automáticamente con inteligencia artificial. Guarda los datos (tienda, fecha, productos, precios) y te muestra estadísticas para que sepas exactamente en qué gastas tu dinero.</p>
+
+    <h3>¿Para qué sirve?</h3>
+    <div class="cards">
+      <div class="card"><div class="icon">📷</div><strong>Digitalizar tickets</strong><p>Fotografía el papel y la IA extrae todos los datos automáticamente.</p></div>
+      <div class="card"><div class="icon">📊</div><strong>Ver estadísticas</strong><p>Cuánto gastas por mes, tienda, categoría de producto...</p></div>
+      <div class="card"><div class="icon">💶</div><strong>Controlar presupuesto</strong><p>Pon límites de gasto por categoría y la app te avisa si te pasas.</p></div>
+      <div class="card"><div class="icon">🔔</div><strong>Alertas de precio</strong><p>Te avisa cuando un producto baja del precio que tú marcas.</p></div>
+      <div class="card"><div class="icon">🛒</div><strong>Lista de la compra</strong><p>Sugiere qué comprar según tus hábitos anteriores.</p></div>
+      <div class="card"><div class="icon">🏠</div><strong>Gestión del Hogar</strong><p>Sincroniza los gastos con la app de gestión del hogar.</p></div>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- MENÚ -->
+  <section id="menu">
+    <h2>🗺️ Cómo moverse por la app</h2>
+    <p class="subtitle">La app tiene un menú en la parte inferior de la pantalla (móvil) o lateral (ordenador).</p>
+
+    <div class="menu-bar">
+      <div class="menu-btn active">📊 Dashboard</div>
+      <div class="menu-btn">🔬 Análisis</div>
+      <div class="menu-btn">📷 Escanear</div>
+      <div class="menu-btn">🛒 Lista</div>
+      <div class="menu-btn">💶 Presupuesto</div>
+      <div class="menu-btn">⚖️ Comparar</div>
+      <div class="menu-btn">⚙️ Ajustes</div>
+    </div>
+
+    <table>
+      <tr><th>Botón</th><th>Qué hace</th></tr>
+      <tr><td>📊 <strong>Dashboard</strong></td><td>Resumen general: cuánto llevas gastado, tus últimos tickets, gráficos del mes.</td></tr>
+      <tr><td>🔬 <strong>Análisis</strong></td><td>Estadísticas detalladas: evolución de precios, productos más comprados, comparativa de tiendas.</td></tr>
+      <tr><td>📷 <strong>Escanear</strong></td><td>El botón principal. Aquí subes o fotografías un ticket nuevo.</td></tr>
+      <tr><td>🛒 <strong>Lista</strong></td><td>Lista de la compra inteligente basada en tus compras anteriores.</td></tr>
+      <tr><td>💶 <strong>Presupuesto</strong></td><td>Define cuánto quieres gastar en cada categoría (fruta, carne, limpieza...).</td></tr>
+      <tr><td>⚖️ <strong>Comparar</strong></td><td>Compara dos tickets entre sí para ver diferencias de precio.</td></tr>
+      <tr><td>⚙️ <strong>Ajustes</strong></td><td>Configuración, backup, exportar datos, temas de color...</td></tr>
+    </table>
+
+    <div class="tip"><strong>💡 Consejo:</strong> En la parte superior hay un buscador. Escribe el nombre de una tienda o producto y aparecerán todos los tickets relacionados.</div>
+  </section>
+
+  <hr>
+
+  <!-- ESCANEAR -->
+  <section id="escanear">
+    <h2>📷 Escanear un ticket <span class="tag">Función principal</span></h2>
+    <p class="subtitle">El corazón de la app. Sube la foto de un ticket y la IA lo lee por ti.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Pulsa el botón central 📷 del menú</strong>
+          <p>Es el botón grande del centro. Se abre la pantalla de escaneo.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Elige cómo subir el ticket</strong>
+          <p>Puedes <strong>hacer una foto</strong> en ese momento (cámara del móvil) o <strong>seleccionar una imagen</strong> que ya tienes guardada en el teléfono.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Espera el análisis</strong>
+          <p>La IA tarda entre 5 y 20 segundos en leer el ticket. Verás un indicador de carga mientras procesa.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Revisa los datos extraídos</strong>
+          <p>Aparece la tienda, fecha, lista de productos con precios y el total. Comprueba que todo es correcto.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>Guarda el ticket</strong>
+          <p>Pulsa el botón <strong>"Guardar"</strong>. Queda almacenado y aparece en tu historial.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>Consejos para mejores resultados</h3>
+    <div class="tip"><strong>💡 Foto nítida:</strong> Pon el ticket en una superficie plana, con buena luz. Evita sombras sobre el papel.</div>
+    <div class="tip"><strong>💡 Ticket largo:</strong> Si el ticket no cabe entero en la foto, intenta alejarte un poco para que quepa todo.</div>
+    <div class="warn"><strong>⚠️ Ticket ya escaneado:</strong> Si intentas subir el mismo ticket dos veces, la app lo detecta y te avisa. Si quieres guardarlo igualmente, pulsa "Forzar guardado".</div>
+
+    <h3>¿Qué pasa si la IA se equivoca?</h3>
+    <p>Normal, nadie es perfecto. Puedes corregir cualquier dato después: pulsa sobre el ticket en el historial → botón ✏️ Editar → cambia lo que necesites.</p>
+  </section>
+
+  <hr>
+
+  <!-- HISTORIAL -->
+  <section id="historial">
+    <h2>📋 Ver tickets guardados</h2>
+    <p class="subtitle">Todos tus tickets están en el Dashboard, ordenados del más reciente al más antiguo.</p>
+
+    <p>Cada ticket en la lista muestra:</p>
+    <ul style="margin: 12px 0 12px 20px; color: var(--muted); font-size: 14px; line-height: 2;">
+      <li>Nombre de la tienda</li>
+      <li>Fecha de la compra</li>
+      <li>Importe total</li>
+      <li>Etiquetas (si tiene)</li>
+    </ul>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Pulsa sobre cualquier ticket</strong>
+          <p>Se abre la vista detallada con todos los productos y precios.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Acciones disponibles en cada ticket</strong>
+          <p>✏️ <strong>Editar</strong> — cambiar datos · 🗑️ <strong>Eliminar</strong> — mover a papelera · 🔗 <strong>Compartir</strong> — enviar enlace · ⚖️ <strong>Comparar</strong> — comparar con otro ticket.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip"><strong>💡 Filtrar por mes:</strong> En el Dashboard puedes filtrar los tickets por mes usando el selector de fechas.</div>
+  </section>
+
+  <hr>
+
+  <!-- EDITAR -->
+  <section id="editar">
+    <h2>✏️ Editar un ticket</h2>
+    <p class="subtitle">Corrige errores de la IA o añade información que falta.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Abre el ticket → botón ✏️ Editar</strong>
+          <p>Puedes editar la tienda, fecha, hora, número de ticket, método de pago y totales.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Editar productos individuales</strong>
+          <p>En la tabla de productos, cada fila tiene un botón de edición. Puedes cambiar el nombre, precio, cantidad y categoría de cada producto.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Añadir un producto que falta</strong>
+          <p>Al final de la tabla hay un botón <strong>"+ Añadir producto"</strong>. Escribe el nombre y precio.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Guardar cambios</strong>
+          <p>Pulsa <strong>"Guardar"</strong>. Los cambios se aplican inmediatamente.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>Marcar como deducible (para autónomos)</h3>
+    <p>En la edición del ticket hay un toggle <strong>"Deducible"</strong>. Si eres autónomo y el gasto es deducible, actívalo. Después puedes exportar un informe de IVA desde Ajustes.</p>
+  </section>
+
+  <hr>
+
+  <!-- BUSCAR -->
+  <section id="buscar">
+    <h2>🔍 Buscar</h2>
+    <p class="subtitle">Encuentra cualquier ticket o producto en segundos.</p>
+
+    <p>El buscador está en la parte superior de la app. Escribe y los resultados aparecen al instante.</p>
+
+    <div class="tip"><strong>💡 Puedes buscar por:</strong> Nombre de tienda (ej: "Mercadona"), nombre de producto (ej: "leche"), o cualquier texto que aparezca en el ticket.</div>
+
+    <h3>Ejemplos de búsquedas útiles</h3>
+    <table>
+      <tr><th>Buscas</th><th>Resultado</th></tr>
+      <tr><td><code>Mercadona</code></td><td>Todos los tickets de Mercadona</td></tr>
+      <tr><td><code>aceite</code></td><td>Tickets que contienen aceite como producto</td></tr>
+      <tr><td><code>vacaciones</code></td><td>Tickets con el tag "vacaciones"</td></tr>
+    </table>
+  </section>
+
+  <hr>
+
+  <!-- TAGS -->
+  <section id="tags">
+    <h2>🏷️ Etiquetas (tags)</h2>
+    <p class="subtitle">Organiza tus tickets con etiquetas personalizadas.</p>
+
+    <p>Las etiquetas son palabras que tú decides para agrupar tickets. Por ejemplo: <code>vacaciones</code>, <code>trabajo</code>, <code>cumpleaños</code>, <code>deducible</code>.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Abre un ticket</strong>
+          <p>Ve al ticket al que quieres añadir una etiqueta.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Escribe el nombre del tag en el campo de etiquetas</strong>
+          <p>Pulsa Enter o el botón + para añadirlo. Puede haber varios tags en el mismo ticket.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Para borrarlo</strong>
+          <p>Pulsa la ✕ que aparece junto al tag.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>Auto-etiquetado automático</h3>
+    <p>En <strong>Ajustes → 🏷️ Auto-etiquetado</strong> puedes crear reglas para que los tags se pongan solos. Por ejemplo: "Si la tienda contiene <em>Mercadona</em> → poner tag <em>super</em>".</p>
+  </section>
+
+  <hr>
+
+  <!-- DASHBOARD -->
+  <section id="dashboard">
+    <h2>📊 Dashboard</h2>
+    <p class="subtitle">Tu resumen financiero de un vistazo.</p>
+
+    <p>El Dashboard es la primera pantalla que ves al abrir la app. Muestra:</p>
+
+    <div class="cards">
+      <div class="card"><div class="icon">💶</div><strong>Gasto total del mes</strong><p>Cuánto llevas gastado en el mes actual.</p></div>
+      <div class="card"><div class="icon">🧾</div><strong>Número de tickets</strong><p>Cuántos tickets tienes guardados este mes.</p></div>
+      <div class="card"><div class="icon">🏪</div><strong>Tienda favorita</strong><p>Dónde compras más.</p></div>
+      <div class="card"><div class="icon">📈</div><strong>Gráfico mensual</strong><p>Evolución del gasto mes a mes.</p></div>
+      <div class="card"><div class="icon">🥧</div><strong>Gasto por categoría</strong><p>Cuánto en frutas, carnes, limpieza...</p></div>
+      <div class="card"><div class="icon">📋</div><strong>Últimos tickets</strong><p>Los tickets más recientes.</p></div>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ANÁLISIS -->
+  <section id="analisis">
+    <h2>🔬 Análisis</h2>
+    <p class="subtitle">Estadísticas avanzadas sobre tus gastos.</p>
+
+    <p>La sección de Análisis tiene varias pestañas:</p>
+
+    <table>
+      <tr><th>Pestaña</th><th>Qué muestra</th></tr>
+      <tr><td>📦 <strong>Productos</strong></td><td>Lista de productos ordenados por frecuencia de compra. Cuántas veces compras cada cosa y cuánto gastas en total.</td></tr>
+      <tr><td>📈 <strong>Precios</strong></td><td>Cómo han cambiado los precios de tus productos con el tiempo. Muestra si algo ha subido o bajado de precio.</td></tr>
+      <tr><td>🏪 <strong>Tiendas</strong></td><td>Comparativa de precios del mismo producto en distintas tiendas. Te dice dónde es más barato comprar cada cosa.</td></tr>
+      <tr><td>🏷️ <strong>Marcas</strong></td><td>Cuánto gastas en marcas blancas vs marcas comerciales.</td></tr>
+      <tr><td>🔄 <strong>Suscripciones</strong></td><td>Detecta automáticamente si tienes pagos periódicos (suscripciones) en tus tickets.</td></tr>
+      <tr><td>📊 <strong>Inflación</strong></td><td>Cómo ha subido el precio de cada categoría a lo largo del tiempo.</td></tr>
+    </table>
+
+    <div class="tip"><strong>💡 Para que las estadísticas sean útiles</strong> necesitas tener al menos 5-10 tickets guardados. Cuantos más tickets, más precisos son los análisis.</div>
+  </section>
+
+  <hr>
+
+  <!-- PRESUPUESTO -->
+  <section id="presupuesto">
+    <h2>💶 Presupuesto</h2>
+    <p class="subtitle">Pon un límite de gasto mensual por categoría.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ve a la pestaña 💶 Presupuesto</strong>
+          <p>Verás todas las categorías de productos disponibles.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Escribe un importe junto a cada categoría</strong>
+          <p>Por ejemplo: Frutas → 30€/mes, Carnes → 50€/mes, Bebidas → 20€/mes.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>La barra de progreso te muestra cuánto llevas</strong>
+          <p>Verde = dentro del presupuesto. Rojo = te has pasado.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip"><strong>💡 Consejo:</strong> Empieza el primer mes sin poner límites, deja que la app registre tu gasto real. El segundo mes ya sabrás en qué te gastas el dinero y podrás poner límites realistas.</div>
+  </section>
+
+  <hr>
+
+  <!-- LISTA DE LA COMPRA -->
+  <section id="lista">
+    <h2>🛒 Lista de la compra</h2>
+    <p class="subtitle">La app aprende cuándo sueles comprar cada producto y te recuerda lo que necesitas.</p>
+
+    <p>Basándose en el historial de tickets, la app calcula:</p>
+    <ul style="margin: 12px 0 12px 20px; color: var(--muted); font-size: 14px; line-height: 2;">
+      <li>Con qué frecuencia compras cada producto (cada 7 días, cada 15 días...)</li>
+      <li>Cuántos días hace que no lo compras</li>
+      <li>Si ya toca volver a comprarlo</li>
+    </ul>
+
+    <p>Los productos aparecen ordenados por urgencia. Los más urgentes (llevan más tiempo sin comprar respecto a tu frecuencia habitual) aparecen arriba.</p>
+
+    <div class="warn"><strong>⚠️ Necesitas historial:</strong> Esta función necesita al menos 2 tickets con el mismo producto para poder calcular la frecuencia.</div>
+  </section>
+
+  <hr>
+
+  <!-- COMPARAR -->
+  <section id="comparar">
+    <h2>⚖️ Comparar tickets</h2>
+    <p class="subtitle">Pon dos tickets uno al lado del otro para ver las diferencias.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ve a la pestaña ⚖️ Comparar</strong>
+          <p>Selecciona el primer ticket en el desplegable de la izquierda.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Selecciona el segundo ticket</strong>
+          <p>En el desplegable de la derecha.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>La app compara automáticamente</strong>
+          <p>Muestra qué productos coinciden, cuáles han subido de precio (🔴) y cuáles han bajado (🟢).</p>
+        </div>
+      </div>
+    </div>
+
+    <p>También puedes comparar desde un ticket individual: abre el ticket → botón ⚖️ Comparar → elige con cuál compararlo.</p>
+  </section>
+
+  <hr>
+
+  <!-- CHAT IA -->
+  <section id="chat">
+    <h2>🤖 Chat con IA</h2>
+    <p class="subtitle">Pregúntale cualquier cosa sobre tus gastos en lenguaje natural.</p>
+
+    <p>El chat de IA tiene acceso a todos tus datos de compra y puede responder preguntas como:</p>
+
+    <div class="cards">
+      <div class="card"><div class="icon">💬</div><strong>"¿Cuánto gasté en marzo?"</strong><p>Te da el total del mes.</p></div>
+      <div class="card"><div class="icon">💬</div><strong>"¿Dónde compro más barato?"</strong><p>Compara tus tiendas habituales.</p></div>
+      <div class="card"><div class="icon">💬</div><strong>"¿Qué categoría me cuesta más?"</strong><p>Analiza en qué gastas más.</p></div>
+      <div class="card"><div class="icon">💬</div><strong>"Dame consejos para ahorrar"</strong><p>Sugerencias basadas en tus datos.</p></div>
+    </div>
+
+    <div class="tip"><strong>💡 Puedes preguntar en español normal:</strong> No hace falta usar comandos exactos. Pregunta como si hablaras con una persona.</div>
+  </section>
+
+  <hr>
+
+  <!-- ALERTAS -->
+  <section id="alertas">
+    <h2>🔔 Alertas de precio</h2>
+    <p class="subtitle">Te avisa cuando un producto baja de precio.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ve al Dashboard → sección Alertas de precio</strong>
+          <p>O desde el menú de Análisis.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Escribe el nombre del producto y el precio máximo que quieres pagar</strong>
+          <p>Ejemplo: "Aceite de oliva" → 4,50€</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>La alerta se activa automáticamente</strong>
+          <p>La próxima vez que escanees un ticket con ese producto a ese precio o menos, la app te avisará.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- COMPARTIR -->
+  <section id="compartir">
+    <h2>🔗 Compartir tickets</h2>
+    <p class="subtitle">Envía un ticket a otra persona mediante enlace.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Abre el ticket → botón 🔗 Compartir</strong>
+          <p>La app genera un enlace único para ese ticket.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Copia y envía el enlace</strong>
+          <p>Por WhatsApp, email, o como quieras. La otra persona puede ver el ticket sin necesitar cuenta.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="warn"><strong>⚠️ Los enlaces caducan en 7 días.</strong> Después ya no se puede acceder al ticket por ese enlace.</div>
+  </section>
+
+  <hr>
+
+  <!-- PAPELERA -->
+  <section id="papelera">
+    <h2>🗑️ Papelera</h2>
+    <p class="subtitle">Los tickets eliminados van aquí antes de borrarse definitivamente.</p>
+
+    <p>Cuando eliminas un ticket, <strong>no se borra inmediatamente</strong>. Va a la papelera y tienes <strong>30 días</strong> para recuperarlo.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Acceder a la papelera</strong>
+          <p>Dashboard → icono 🗑️ (esquina superior) → Ver papelera.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Recuperar un ticket</strong>
+          <p>Pulsa el botón "Restaurar" junto al ticket. Vuelve a tu historial normal.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Borrar definitivamente</strong>
+          <p>Pulsa "Eliminar permanente". Esto no tiene vuelta atrás.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="danger"><strong>🚫 Atención:</strong> "Eliminar permanente" borra el ticket para siempre. No hay forma de recuperarlo después.</div>
+  </section>
+
+  <hr>
+
+  <!-- AJUSTES -->
+  <section id="ajustes">
+    <h2>⚙️ Ajustes</h2>
+    <p class="subtitle">Configuración general de la app.</p>
+
+    <table>
+      <tr><th>Sección</th><th>Qué puedes hacer</th></tr>
+      <tr><td>🎨 <strong>Apariencia</strong></td><td>Cambiar entre modo oscuro y claro.</td></tr>
+      <tr><td>💾 <strong>Backup y datos</strong></td><td>Exportar todos tus tickets a un archivo o importar desde una copia.</td></tr>
+      <tr><td>📊 <strong>Exportar</strong></td><td>Descargar tus datos en Excel, CSV, o formato para apps de presupuesto.</td></tr>
+      <tr><td>🧾 <strong>IVA / Autónomos</strong></td><td>Informe de IVA soportado por trimestre (para hacer la declaración).</td></tr>
+      <tr><td>🏷️ <strong>Categorías personalizadas</strong></td><td>Crear tus propias categorías de producto con palabras clave.</td></tr>
+      <tr><td>🏷️ <strong>Auto-etiquetado</strong></td><td>Reglas para que los tags se pongan automáticamente.</td></tr>
+      <tr><td>🔔 <strong>Notificaciones</strong></td><td>Activar notificaciones del navegador.</td></tr>
+      <tr><td>🏠 <strong>Gestión del Hogar</strong></td><td>Sincronizar tickets con la app de gestión del hogar.</td></tr>
+      <tr><td>ℹ️ <strong>Estado</strong></td><td>Cuántos tickets tienes guardados y versión de la app.</td></tr>
+    </table>
+  </section>
+
+  <hr>
+
+  <!-- BACKUP -->
+  <section id="backup">
+    <h2>💾 Backup y exportar datos</h2>
+    <p class="subtitle">No pierdas tus datos. Haz copias de seguridad regularmente.</p>
+
+    <h3>Hacer una copia de seguridad</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ajustes → 💾 Backup y datos → Exportar backup</strong>
+          <p>Se descarga un archivo <code>.json</code> con todos tus tickets, presupuestos y configuración.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Guarda el archivo en un lugar seguro</strong>
+          <p>En Google Drive, iCloud, o tu ordenador. Se recomienda hacer backup una vez al mes.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>Restaurar desde backup</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ajustes → 💾 Backup y datos → Importar backup</strong>
+          <p>Selecciona el archivo <code>.json</code> que descargaste antes.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Los datos se restauran automáticamente</strong>
+          <p>Solo añade los tickets que no existían ya, no duplica nada.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>Exportar a Excel</h3>
+    <p>Ajustes → 📊 Exportar → Excel completo. Descarga un archivo <code>.xlsx</code> con todos los tickets. Puedes abrirlo con Excel, Numbers o Google Sheets.</p>
+  </section>
+
+  <hr>
+
+  <!-- GESTIÓN DEL HOGAR -->
+  <section id="gestionhogar">
+    <h2>🏠 Integración con Gestión del Hogar</h2>
+    <p class="subtitle">Los gastos de TicketScan aparecen automáticamente en la app de gestión del hogar.</p>
+
+    <p>Cada vez que escaneas un ticket nuevo, el gasto se envía automáticamente a la app de gestión del hogar como un gasto de la categoría <strong>"Compras"</strong>.</p>
+
+    <h3>Volcar los tickets antiguos (solo la primera vez)</h3>
+    <p>Si ya tenías tickets guardados antes de configurar esta integración, puedes enviarlos todos de golpe:</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ve a Ajustes → 🏠 Gestión del Hogar</strong>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Pulsa "Sincronizar"</strong>
+          <p>Envía todos los tickets históricos. Solo añade los que no existen ya (no duplica).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Abre la app de gestión del hogar</strong>
+          <p>Los gastos aparecen en la sección de Gastos, ordenados por el mes en que se hicieron las compras.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>Si aparecen duplicados</h3>
+    <p>Si por error pulsaste Sincronizar varias veces y tienes duplicados en gestión del hogar:</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ajustes → 🏠 Gestión del Hogar → Limpiar duplicados</strong>
+          <p>Borra automáticamente los extras y deja solo uno por ticket.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip"><strong>💡 Automático:</strong> A partir de ahora no tienes que hacer nada. Cada ticket nuevo se sincroniza solo.</div>
+  </section>
+
+  <hr>
+
+  <!-- FAQ -->
+  <section id="faq">
+    <h2>❓ Preguntas frecuentes</h2>
+
+    <h3>La IA no ha leído bien el ticket, ¿qué hago?</h3>
+    <p>Edita el ticket manualmente. Abre el ticket → ✏️ Editar → corrige los campos que están mal → Guardar. Pasa especialmente con tickets muy arrugados, mal iluminados o con letra muy pequeña.</p>
+
+    <h3>¿Se pierden mis datos si cierro la app?</h3>
+    <p>No. Todo se guarda en la nube (base de datos segura). Puedes cerrar la app, cambiar de móvil o limpiar el navegador sin perder nada.</p>
+
+    <h3>¿Puedo usar la app desde el ordenador?</h3>
+    <p>Sí. Abre la misma URL en el navegador del ordenador. Funciona igual, aunque la cámara para escanear funciona mejor en el móvil.</p>
+
+    <h3>¿Cómo instalo la app en el móvil?</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Abre la app en Safari (iPhone) o Chrome (Android)</strong>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>iPhone:</strong> botón compartir (cuadrado con flecha) → "Añadir a pantalla de inicio"<br>
+          <strong>Android:</strong> menú ⋮ → "Instalar aplicación" o "Añadir a pantalla de inicio"
+        </div>
+      </div>
+    </div>
+
+    <h3>El análisis tarda mucho o da error</h3>
+    <p>El servicio de IA puede estar ocupado. Espera 1-2 minutos e inténtalo de nuevo. Si el error persiste, puede que la foto no sea lo suficientemente nítida.</p>
+
+    <h3>¿Por qué me pide contraseña?</h3>
+    <p>La app tiene contraseña para proteger tus datos. Si no la recuerdas, contacta con el administrador de la app.</p>
+
+    <h3>Borré un ticket por error, ¿puedo recuperarlo?</h3>
+    <p>Sí, si no han pasado 30 días. Ve a Dashboard → 🗑️ Papelera → Restaurar. Después de 30 días se borra definitivamente.</p>
+
+    <h3>¿La app funciona sin internet?</h3>
+    <p>Parcialmente. Puedes ver los tickets ya guardados. Para escanear nuevos tickets o ver estadísticas necesitas conexión a internet.</p>
+  </section>
+
+  <div style="text-align:center; padding: 40px 0; color: var(--muted); font-size: 13px; border-top: 1px solid var(--border); margin-top: 40px;">
+    🧾 TicketScan · Manual de usuario · Versión 3.0<br>
+    <span style="font-size: 11px;">Última actualización: junio 2026</span>
+  </div>
+
+</main>
+</div>
+
+<script>
+  // Highlight active nav link on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const links = document.querySelectorAll('nav a');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const active = document.querySelector(`nav a[href="#${e.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { threshold: 0.3 });
+  sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
