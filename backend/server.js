@@ -26,12 +26,14 @@ async function syncToFirebase(datos, ticketId, subidoPor) {
       const [d,m,y] = datos.fecha.split("/");
       if (d && m && y) dateObj = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
     }
+    // date como string YYYY-MM-DD (gestión hogar llama .startsWith() sobre el campo)
+    const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,"0")}-${String(dateObj.getDate()).padStart(2,"0")}`;
     await firestoreDb.collection("expenses").add({
       amount: parseFloat(datos.total),
       category: "Compras",
       description: datos.tienda ? `${datos.tienda} (ticket #${ticketId})` : `Ticket #${ticketId}`,
       paid_by: subidoPor || "ticketscan",
-      date: Timestamp.fromDate(dateObj),
+      date: dateStr,
       split_between: [],
       source: "ticketscan",
       ticketscanId: ticketId,
